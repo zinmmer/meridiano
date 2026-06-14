@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0E1116" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Meridiano" />
+<title>Meridiano · El porqué detrás del precio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+<style>
+  /* ============ TOKENS ============ */
+  :root{
+    --ink:#0E1116;           /* base background */
+    --ink-raised:#161B22;    /* cards */
+    --ink-sunken:#0A0D12;    /* sheet / sunken */
+    --line:#232A33;          /* hairline */
+    --line-soft:#1B212A;
+    --bone:#ECE6D8;          /* primary text (warm) */
+    --bone-dim:#9097A0;      /* secondary text */
+    --bone-faint:#5C636D;    /* tertiary */
+    --gold:#E0A436;          /* brand / interactive */
+    --gold-dim:#7A5e22;
+    --up:#3FB37F;            /* alcista */
+    --down:#E5604D;          /* bajista */
+    --flat:#7C8893;          /* neutral */
+    --r:14px;
+    --r-sm:9px;
+    --ff-display:"Spectral",Georgia,serif;
+    --ff-body:"Public Sans",system-ui,-apple-system,sans-serif;
+    --ff-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+    --shell:480px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    background:var(--ink);
+    color:var(--bone);
+    font-family:var(--ff-body);
+    font-size:15px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overscroll-behavior-y:none;
+  }
+  body::before{ /* faint vignette so pure-flat dark doesn't read as a template */
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(120% 80% at 50% -10%, rgba(224,164,54,.06), transparent 60%);
+  }
+  .shell{position:relative;z-index:1;max-width:var(--shell);margin:0 auto;min-height:100%;
+    display:flex;flex-direction:column;background:var(--ink);
+    border-left:1px solid var(--line-soft);border-right:1px solid var(--line-soft);}
+  .mono{font-family:var(--ff-mono);font-variant-ligatures:none;}
+
+  /* ============ APP BAR ============ */
+  .appbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;
+    padding:14px 16px calc(12px) 16px;background:rgba(14,17,22,.86);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);padding-top:calc(14px + env(safe-area-inset-top));}
+  .brand{display:flex;align-items:baseline;gap:8px;margin-right:auto;}
+  .brand-mark{font-family:var(--ff-display);font-weight:600;font-size:21px;letter-spacing:.04em;
+    color:var(--bone);}
+  .brand-mark b{color:var(--gold);font-weight:600;}
+  .brand-sub{font-size:11px;color:var(--bone-faint);letter-spacing:.02em;}
+  .pill{font-family:var(--ff-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--gold);border:1px solid var(--gold-dim);border-radius:100px;padding:4px 9px;white-space:nowrap;}
+  .pill.live{color:var(--up);border-color:rgba(63,179,127,.5);}
+  .pill.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--up);margin-right:6px;vertical-align:middle;box-shadow:0 0 0 3px rgba(63,179,127,.16);}
+  .pill.err{color:var(--down);border-color:rgba(229,96,77,.5);}
+
+  /* ============ DISCLAIMER STRIP ============ */
+  .strip{font-size:11.5px;color:var(--bone-dim);background:var(--ink-sunken);
+    border-bottom:1px solid var(--line-soft);padding:8px 16px;display:flex;gap:8px;align-items:center;}
+  .strip .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex:none;
+    box-shadow:0 0 0 3px rgba(224,164,54,.12);}
+
+  /* ============ VIEWS ============ */
+  main{flex:1;}
+  .view{display:none;padding:16px 14px calc(96px + env(safe-area-inset-bottom)) 14px;animation:fade .25s ease;}
+  .view.active{display:block;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+
+  .view-head{display:flex;align-items:flex-end;justify-content:space-between;margin:2px 2px 14px;}
+  .view-title{font-family:var(--ff-display);font-size:24px;font-weight:600;letter-spacing:.01em;line-height:1.1;}
+  .view-meta{font-family:var(--ff-mono);font-size:11px;color:var(--bone-faint);text-align:right;}
+
+  /* ============ FILTER CHIPS ============ */
+  .chips{display:flex;gap:8px;margin:0 2px 16px;}
+  .chip{font-size:13px;font-weight:600;color:var(--bone-dim);background:transparent;
+    border:1px solid var(--line);border-radius:100px;padding:7px 15px;cursor:pointer;transition:.15s;}
+  .chip[aria-pressed="true"]{color:var(--ink);background:var(--bone);border-color:var(--bone);}
+
+  /* ============ BIAS CARD ============ */
+  .cards{display:flex;flex-direction:column;gap:10px;}
+  .card{display:block;width:100%;text-align:left;cursor:pointer;background:var(--ink-raised);
+    border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;transition:.15s;position:relative;overflow:hidden;}
+  .card:active{transform:scale(.992);}
+  .card:hover{border-color:#2E3742;}
+  .card::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--edge,transparent);}
+  .card.up{--edge:var(--up);} .card.down{--edge:var(--down);} .card.flat{--edge:var(--flat);}
+  .card-top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .tick{display:flex;align-items:baseline;gap:9px;min-width:0;}
+  .tick .sym{font-family:var(--ff-mono);font-size:16px;font-weight:600;letter-spacing:.02em;color:var(--bone);}
+  .tick .nm{font-size:12px;color:var(--bone-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .card-right{display:flex;align-items:center;gap:12px;flex:none;}
+  .dir{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;letter-spacing:.01em;
+    padding:4px 9px;border-radius:7px;white-space:nowrap;}
+  .dir .ar{font-family:var(--ff-mono);font-size:12px;}
+  .dir.up{color:var(--up);background:rgba(63,179,127,.11);}
+  .dir.down{color:var(--down);background:rgba(229,96,77,.11);}
+  .dir.flat{color:var(--flat);background:rgba(124,136,147,.12);}
+  .conv{display:flex;gap:3px;align-items:center;}
+  .conv i{width:6px;height:6px;border-radius:50%;background:var(--line);}
+  .conv.up i.on{background:var(--up);} .conv.down i.on{background:var(--down);} .conv.flat i.on{background:var(--flat);}
+  .card-driver{margin-top:11px;font-size:13.5px;color:var(--bone-dim);line-height:1.4;}
+  .card-driver b{color:var(--bone);font-weight:600;}
+  .card-foot{margin-top:11px;display:flex;align-items:center;justify-content:space-between;
+    border-top:1px solid var(--line-soft);padding-top:9px;}
+  .card-foot .lab{font-family:var(--ff-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--bone-faint);}
+  .card-foot .go{font-size:12px;color:var(--gold);font-weight:600;}
+
+  .klass-head{font-family:var(--ff-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--bone-faint);margin:18px 2px 10px;display:flex;align-items:center;gap:10px;}
+  .klass-head::after{content:"";flex:1;height:1px;background:var(--line-soft);}
+  .klass-head:first-child{margin-top:0;}
+
+  /* ============ EVIDENCE SHEET (signature) ============ */
+  .scrim{position:fixed;inset:0;background:rgba(5,7,10,.66);backdrop-filter:blur(2px);z-index:40;
+    opacity:0;pointer-events:none;transition:opacity .28s ease;}
+  .scrim.open{opacity:1;pointer-events:auto;}
+  .sheet{position:fixed;left:50%;bottom:0;transform:translate(-50%,100%);width:100%;max-width:var(--shell);
+    max-height:92vh;z-index:50;background:var(--ink-sunken);border:1px solid var(--line);
+    border-bottom:none;border-radius:20px 20px 0 0;transition:transform .32s cubic-bezier(.22,1,.36,1);
+    display:flex;flex-direction:column;overflow:hidden;}
+  .sheet.open{transform:translate(-50%,0);}
+  .grab{width:38px;height:4px;border-radius:100px;background:var(--line);margin:10px auto 4px;flex:none;}
+  .sheet-scroll{overflow-y:auto;padding:6px 18px calc(28px + env(safe-area-inset-bottom));}
+
+  .verdict{padding:14px 2px 16px;border-bottom:1px solid var(--line);}
+  .verdict-top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .verdict .sym{font-family:var(--ff-mono);font-size:22px;font-weight:600;color:var(--bone);}
+  .verdict .nm{font-size:12.5px;color:var(--bone-faint);margin-top:2px;}
+  .verdict-thesis{font-family:var(--ff-display);font-size:18px;line-height:1.35;color:var(--bone);
+    margin-top:14px;font-weight:400;}
+  .coh{display:flex;align-items:center;gap:9px;margin-top:13px;font-size:12px;color:var(--bone-dim);}
+  .coh .bar{flex:1;height:5px;border-radius:100px;background:var(--line);overflow:hidden;max-width:160px;}
+  .coh .bar i{display:block;height:100%;background:var(--gold);border-radius:100px;}
+  .coh .val{font-family:var(--ff-mono);font-weight:600;color:var(--bone);}
+
+  .sec-label{font-family:var(--ff-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--bone-faint);margin:20px 0 11px;}
+  .dim{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line-soft);}
+  .dim:last-child{border-bottom:none;}
+  .dim-mark{flex:none;width:30px;font-family:var(--ff-mono);font-size:14px;font-weight:600;text-align:center;padding-top:1px;}
+  .dim-mark.up{color:var(--up);} .dim-mark.down{color:var(--down);} .dim-mark.flat{color:var(--flat);}
+  .dim-body .dim-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;}
+  .dim-body .dim-tag{font-family:var(--ff-mono);font-size:9.5px;letter-spacing:.05em;color:var(--bone-faint);
+    border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-weight:500;}
+  .dim-body .dim-note{font-size:13px;color:var(--bone-dim);margin-top:3px;line-height:1.4;}
+
+  /* evidence chain — the dossier trail */
+  .chain{position:relative;margin-top:4px;}
+  .ev{position:relative;padding:0 0 18px 26px;}
+  .ev:last-child{padding-bottom:4px;}
+  .ev::before{content:"";position:absolute;left:5px;top:3px;bottom:-3px;width:1px;background:var(--line);}
+  .ev:last-child::before{display:none;}
+  .ev::after{content:"";position:absolute;left:1px;top:4px;width:9px;height:9px;border-radius:50%;
+    background:var(--ink-sunken);border:1.5px solid var(--gold);}
+  .ev-tag{font-family:var(--ff-mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--gold);}
+  .ev-data{font-size:14px;color:var(--bone);margin:3px 0 6px;line-height:1.4;}
+  .ev-meta{display:flex;flex-wrap:wrap;gap:5px 14px;font-family:var(--ff-mono);font-size:11px;color:var(--bone-faint);}
+  .ev-meta span b{color:var(--bone-dim);font-weight:500;}
+  .ev-impact{font-size:12.5px;color:var(--bone-dim);margin-top:6px;padding-left:9px;border-left:2px solid var(--line);}
+
+  .sheet-note{font-size:11.5px;color:var(--bone-faint);margin-top:22px;padding-top:14px;border-top:1px solid var(--line-soft);line-height:1.5;}
+
+  /* ============ CALENDAR ============ */
+  .cal-day{font-family:var(--ff-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--bone-dim);margin:18px 2px 9px;display:flex;align-items:center;gap:8px;}
+  .cal-day:first-of-type{margin-top:0;}
+  .cal-day .badge{color:var(--gold);}
+  .cal{background:var(--ink-raised);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
+  .cal-item{display:flex;gap:13px;padding:13px 15px;border-bottom:1px solid var(--line-soft);}
+  .cal-item:last-child{border-bottom:none;}
+  .cal-time{flex:none;text-align:right;width:54px;}
+  .cal-time .t{font-family:var(--ff-mono);font-size:13px;color:var(--bone);font-weight:600;}
+  .cal-time .cc{font-family:var(--ff-mono);font-size:10px;color:var(--bone-faint);margin-top:2px;}
+  .cal-main{min-width:0;flex:1;}
+  .cal-main .ev-name{font-size:14px;font-weight:600;color:var(--bone);}
+  .cal-main .ev-sub{font-size:12px;color:var(--bone-dim);margin-top:2px;}
+  .imp{display:inline-flex;gap:2px;margin-top:6px;}
+  .imp i{width:5px;height:11px;border-radius:1px;background:var(--line);}
+  .imp i.on{background:var(--gold);}
+  .cal-assets{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px;}
+  .tagx{font-family:var(--ff-mono);font-size:10px;color:var(--bone-dim);border:1px solid var(--line);
+    border-radius:5px;padding:2px 6px;}
+
+  /* ============ FEED ============ */
+  .feed-item{display:flex;gap:13px;padding:14px 2px;border-bottom:1px solid var(--line-soft);}
+  .feed-rail{flex:none;display:flex;flex-direction:column;align-items:center;}
+  .feed-rail .node{width:8px;height:8px;border-radius:50%;background:var(--line);margin-top:5px;}
+  .feed-item.fresh .feed-rail .node{background:var(--gold);box-shadow:0 0 0 4px rgba(224,164,54,.14);animation:pulse 2.4s ease infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(224,164,54,.14);}50%{box-shadow:0 0 0 7px rgba(224,164,54,.04);}}
+  .feed-body{flex:1;min-width:0;}
+  .feed-head{display:flex;align-items:center;gap:8px;font-family:var(--ff-mono);font-size:11px;color:var(--bone-faint);}
+  .feed-head .src{color:var(--gold);}
+  .feed-text{font-size:14px;color:var(--bone);margin-top:5px;line-height:1.42;}
+  .feed-react{margin-top:8px;display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;
+    padding:3px 9px;border-radius:7px;}
+  .feed-react.up{color:var(--up);background:rgba(63,179,127,.1);}
+  .feed-react.down{color:var(--down);background:rgba(229,96,77,.1);}
+  .feed-react.flat{color:var(--flat);background:rgba(124,136,147,.12);}
+
+  /* ============ SOURCES ============ */
+  .src-intro{font-size:13.5px;color:var(--bone-dim);line-height:1.5;margin:0 2px 16px;}
+  .src-card{background:var(--ink-raised);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:14px;}
+  .src-item{display:flex;gap:12px;align-items:flex-start;padding:13px 15px;border-bottom:1px solid var(--line-soft);}
+  .src-item:last-child{border-bottom:none;}
+  .src-status{flex:none;width:9px;height:9px;border-radius:50%;margin-top:5px;}
+  .src-status.live{background:var(--up);box-shadow:0 0 0 3px rgba(63,179,127,.14);}
+  .src-status.proxy{background:var(--gold);box-shadow:0 0 0 3px rgba(224,164,54,.14);}
+  .src-status.soon{background:var(--flat);}
+  .src-body{flex:1;min-width:0;}
+  .src-name{font-weight:700;font-size:14px;}
+  .src-name .org{color:var(--bone);} .src-name .what{color:var(--bone-faint);font-weight:500;font-size:12px;}
+  .src-ep{font-family:var(--ff-mono);font-size:11px;color:var(--bone-dim);margin-top:4px;word-break:break-all;}
+  .src-mode{font-family:var(--ff-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;margin-top:6px;}
+  .src-mode.live{color:var(--up);} .src-mode.proxy{color:var(--gold);} .src-mode.soon{color:var(--flat);}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:2px 4px 0;font-size:11.5px;color:var(--bone-faint);}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .legend i{width:8px;height:8px;border-radius:50%;}
+  .legend i.live{background:var(--up);} .legend i.proxy{background:var(--gold);} .legend i.soon{background:var(--flat);}
+
+  .callout{background:var(--ink-sunken);border:1px solid var(--line);border-radius:var(--r);
+    padding:15px;margin-top:16px;font-size:13px;color:var(--bone-dim);line-height:1.55;}
+  .callout b{color:var(--bone);font-weight:600;}
+
+  /* ============ TAB BAR ============ */
+  .tabbar{position:sticky;bottom:0;z-index:30;display:flex;background:rgba(14,17,22,.92);
+    backdrop-filter:blur(12px);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);}
+  .tab{flex:1;background:none;border:none;cursor:pointer;padding:10px 4px 11px;display:flex;
+    flex-direction:column;align-items:center;gap:4px;color:var(--bone-faint);transition:.15s;}
+  .tab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;}
+  .tab .lab{font-size:10.5px;font-weight:600;letter-spacing:.01em;}
+  .tab[aria-current="true"]{color:var(--gold);}
+
+  .empty{color:var(--bone-faint);font-size:13px;text-align:center;padding:40px 20px;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- APP BAR -->
+  <header class="appbar">
+    <div class="brand">
+      <span class="brand-mark">MERI<b>DIANO</b></span>
+      <span class="brand-sub">macro desk</span>
+    </div>
+    <span class="pill" id="demoPill">Demo</span>
+  </header>
+
+  <!-- HONESTY STRIP -->
+  <div class="strip">
+    <span class="dot"></span>
+    <span>Datos de ejemplo, no señales reales. No es asesoría financiera.</span>
+  </div>
+
+  <main>
+    <!-- ===== VIEW: SESGOS ===== -->
+    <section class="view active" id="v-sesgos">
+      <div class="view-head">
+        <h1 class="view-title">Sesgos</h1>
+        <div class="view-meta">demo · 13 jun 2026<br/>14:30 UTC</div>
+      </div>
+      <div class="chips" id="chips">
+        <button class="chip" data-f="all" aria-pressed="true">Todos</button>
+        <button class="chip" data-f="fx" aria-pressed="false">FX</button>
+        <button class="chip" data-f="idx" aria-pressed="false">Índices</button>
+      </div>
+      <div id="cardsWrap"></div>
+    </section>
+
+    <!-- ===== VIEW: CALENDARIO ===== -->
+    <section class="view" id="v-cal">
+      <div class="view-head">
+        <h1 class="view-title">Calendario</h1>
+        <div class="view-meta">demo · filtra por<br/>activo o país</div>
+      </div>
+      <div id="calWrap"></div>
+    </section>
+
+    <!-- ===== VIEW: EN VIVO ===== -->
+    <section class="view" id="v-feed">
+      <div class="view-head">
+        <h1 class="view-title">En vivo</h1>
+        <div class="view-meta">demo · eventos<br/>que mueven precio</div>
+      </div>
+      <div id="feedWrap"></div>
+    </section>
+
+    <!-- ===== VIEW: FUENTES ===== -->
+    <section class="view" id="v-src">
+      <div class="view-head">
+        <h1 class="view-title">Fuentes</h1>
+        <div class="view-meta">arquitectura<br/>de datos</div>
+      </div>
+      <p class="src-intro">Cada sesgo se construye solo desde fuentes primarias: bancos centrales, organismos oficiales de estadística y reguladores. Aquí ves de dónde sale cada dato y cómo se conecta.</p>
+      <div class="legend">
+        <span><i class="live"></i> Directo desde el navegador</span>
+        <span><i class="proxy"></i> Vía proxy (clave/CORS)</span>
+        <span><i class="soon"></i> En camino</span>
+      </div>
+      <div id="srcWrap" style="margin-top:14px;"></div>
+      <div class="callout">
+        <b>Por qué hace falta un proxy.</b> FRED, ECB y SEC EDGAR no permiten llamadas desde el navegador (política CORS) y algunas exigen clave de API o cabecera <span class="mono">User-Agent</span>, que no debe ir expuesta en el cliente. Un pequeño servidor intermedio va a buscar el dato oficial, lo cachea y se lo sirve a la app. Frankfurter (BCE) y el COT de la CFTC sí admiten conexión directa.
+      </div>
+    </section>
+  </main>
+
+  <!-- TAB BAR -->
+  <nav class="tabbar" id="tabbar">
+    <button class="tab" data-v="sesgos" aria-current="true">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polygon points="12,7 14.2,14.2 7,12"/></svg>
+      <span class="lab">Sesgos</span>
+    </button>
+    <button class="tab" data-v="cal">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/></svg>
+      <span class="lab">Calendario</span>
+    </button>
+    <button class="tab" data-v="feed">
+      <svg viewBox="0 0 24 24"><path d="M3.5 12h4l2.5-7 4 14 2.5-7h4"/></svg>
+      <span class="lab">En vivo</span>
+    </button>
+    <button class="tab" data-v="src">
+      <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg>
+      <span class="lab">Fuentes</span>
+    </button>
+  </nav>
+</div>
+
+<!-- EVIDENCE SHEET -->
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Evidencia del sesgo">
+  <div class="grab"></div>
+  <div class="sheet-scroll" id="sheetBody"></div>
+</div>
+
+<script>
+/* ============================================================
+   MERIDIANO · macro desk  (demo build)
+   ------------------------------------------------------------
+   Capa de datos: cada función indica el endpoint oficial real
+   donde enchufa. En esta build USE_DEMO = true devuelve datos
+   de ejemplo. Cuando montes el proxy, pon USE_DEMO = false y
+   completa los fetch en el bloque Sources.
+   ============================================================ */
+const USE_DEMO = false;         // en vivo: usa el proxy
+const PROXY    = 'https://meridiano-proxy.toktoktoktak0.workers.dev';   // URL del worker (sin barra final)
+const LIVE     = !USE_DEMO && !!PROXY;
+
+// llamada al proxy con manejo de error
+async function fromProxy(path){
+  const r = await fetch(PROXY + path, { headers:{ 'Accept':'application/json' } });
+  if(!r.ok) throw new Error('proxy ' + r.status);
+  return r.json();
+}
+
+/* ---- CAPA DE FUENTES OFICIALES (adaptadores) ---------------
+   Cada método llama al proxy (worker.js) cuando LIVE = true; si
+   no, devuelve datos de ejemplo. El proxy es quien habla con las
+   fuentes oficiales, cachea y añade CORS.
+   ------------------------------------------------------------ */
+const Sources = {
+  // Tipos de referencia del BCE (vía Frankfurter) -> GET /fx
+  async fxReference(base='EUR', symbols='USD,GBP,JPY'){
+    if(!LIVE) return null;
+    return fromProxy(`/fx?base=${base}&symbols=${symbols}`);
+  },
+  // Series macro de la Reserva Federal (FRED) -> GET /fred?series=CPIAUCSL
+  async fredSeries(series){
+    if(!LIVE) return null;
+    return fromProxy(`/fred?series=${encodeURIComponent(series)}`);
+  },
+  // Estadísticas del BCE (SDW) -> GET /ecb?key=ICP.M.U2.N.000000.4.ANR
+  async ecbSeries(key){
+    if(!LIVE) return null;
+    return fromProxy(`/ecb?key=${encodeURIComponent(key)}`);
+  },
+  // SEC EDGAR (hechos financieros) -> GET /edgar?cik=320193&concept=Revenues
+  async edgarConcept(cik, concept){
+    if(!LIVE) return null;
+    return fromProxy(`/edgar?cik=${encodeURIComponent(cik)}&concept=${encodeURIComponent(concept)}`);
+  },
+  // CFTC Commitments of Traders -> GET /cot?market=EURO FX
+  async cotReport(market){
+    if(!LIVE) return null;
+    return fromProxy(`/cot?market=${encodeURIComponent(market)}`);
+  },
+  // BIS — tipo de política de un banco central -> GET /bis?cc=JP
+  async bisRate(cc){
+    if(!LIVE) return null;
+    return fromProxy(`/bis?cc=${encodeURIComponent(cc)}`);
+  },
+  // Calendario macro (de momento, demo).
+  async macroCalendar(){ return DEMO.calendar; }
+};
+
+/* ---- MOTOR DE SESGO (transparente, sin caja negra) ---------
+   Combina 4 dimensiones con pesos declarados. La convicción
+   sale del grado de acuerdo entre ellas: no es un número mágico.
+   ------------------------------------------------------------ */
+const W = { macro:0.35, positioning:0.25, fundamentals:0.25, sentiment:0.15 };
+const val = d => d==='up'?1 : d==='down'?-1 : 0;
+function computeBias(dims){
+  let score=0, agree=0, voted=0;
+  for(const k in W){ const v=val(dims[k].dir); score+=W[k]*v; if(v!==0){voted++; agree+=v;} }
+  const dir = score>0.12?'up' : score<-0.12?'down' : 'flat';
+  // convicción 1..5: magnitud del score + alineación de las dimensiones que opinan
+  const align = voted? Math.abs(agree)/voted : 0;
+  const conv = dir==='flat' ? Math.max(1, Math.round(2 - Math.abs(score)*3))
+                            : Math.min(5, Math.max(1, Math.round(1 + Math.abs(score)*3 + align*1.4)));
+  return { dir, conv, score:+score.toFixed(2) };
+}
+
+/* ============================================================
+   MOTOR DE ANÁLISIS  (reglas transparentes sobre datos oficiales)
+   ------------------------------------------------------------
+   Lee los datos del proxy y deduce cada dimensión con reglas
+   explícitas y auditables. Donde no hay fuente conectada, marca
+   neutral y lo dice. REGLAS ILUSTRATIVAS SIN VALIDAR.
+   No es asesoría financiera.
+   ============================================================ */
+const num   = v => (v==null || v==='' || isNaN(+v)) ? null : +v;
+const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
+const sgn   = (x,dead=0) => x> dead ? 1 : x< -dead ? -1 : 0;
+
+const Analyze = {
+  inflTarget: 2.0,
+  pairCcy: { eurusd:['EUR','USD'], gbpusd:['GBP','USD'], audusd:['AUD','USD'],
+             nzdusd:['NZD','USD'], usdjpy:['USD','JPY'], usdchf:['USD','CHF'],
+             usdcad:['USD','CAD'], eurgbp:['EUR','GBP'], eurjpy:['EUR','JPY'],
+             usdcny:['USD','CNY'] },
+  cot: { eurusd:{m:'EURO FX',base:true}, gbpusd:{m:'BRITISH POUND',base:true},
+         audusd:{m:'AUSTRALIAN DOLLAR',base:true}, nzdusd:{m:'NEW ZEALAND DOLLAR',base:true},
+         usdjpy:{m:'JAPANESE YEN',base:false}, usdchf:{m:'SWISS FRANC',base:false},
+         usdcad:{m:'CANADIAN DOLLAR',base:false}, eurgbp:{m:'EURO FX',base:true},
+         eurjpy:{m:'EURO FX',base:true} },
+  bellwether: { spx:{n:'Apple',cik:'320193',c:'RevenueFromContractWithCustomerExcludingAssessedTax'},
+                ndx:{n:'NVIDIA',cik:'1045810',c:'RevenueFromContractWithCustomerExcludingAssessedTax'},
+                dji:{n:'Microsoft',cik:'789019',c:'RevenueFromContractWithCustomerExcludingAssessedTax'} },
+  euIndex: new Set(['dax','cac','ibex','estx50']),
+  cbName: { JPY:'BoJ', AUD:'RBA', NZD:'RBNZ', CNY:'PBoC' },
+
+  // YoY desde una serie mensual de índice (FRED, orden descendente)
+  yoyMonthly(o){ const a=o&&o.observations; if(!a||a.length<13) return null;
+    const v0=num(a[0].value), v12=num(a[12].value); return (v0!=null&&v12)?(v0/v12-1)*100:null; },
+  // dirección de una serie FRED (desc): último vs k atrás
+  dirDesc(o,k=3){ const a=o&&o.observations; if(!a||a.length<=k) return null;
+    return sgn(num(a[0].value)-num(a[k].value)); },
+  // dirección de una serie ascendente (ECB/BIS): último vs inicio de la ventana
+  dirAsc(o){ const a=o&&o.observations; if(!a||a.length<2) return null;
+    return sgn(num(a[a.length-1].value)-num(a[0].value)); },
+  // dirección de un tipo de política (BIS asc): último vs k meses atrás, banda muerta 0,05pp
+  dirBack(o,k){ const a=o&&o.observations; if(!a||a.length<2) return null;
+    const last=num(a[a.length-1].value), ref=num(a[Math.max(0,a.length-1-k)].value);
+    return (last!=null&&ref!=null) ? sgn(last-ref, 0.05) : null; },
+
+  // ----- puntuaciones de política monetaria -----
+  // Para DIVISAS: nivel del tipo (carry) + dirección + (inflación vs objetivo, solo US/EUR).
+  stanceFrom(rate, dir, infl){
+    if(rate==null && dir==null && infl==null) return null;
+    let s = 0;
+    if(rate!=null) s += rate*0.25;
+    if(dir!=null)  s += dir*0.6;
+    if(infl!=null) s += (infl-this.inflTarget)*0.4;
+    return s;
+  },
+  fxStance(ccy,b){
+    if(ccy==='USD') return this.stanceFrom(b.usRate, b.usRateDir, b.usInfl);
+    if(ccy==='EUR') return this.stanceFrom(b.ezRate, b.ezRateDir, b.ezInfl);
+    const c = b.cb && b.cb[ccy];
+    return c ? this.stanceFrom(c.rate, c.dir, null) : null;
+  },
+  // Para RENTA VARIABLE: dirección del tipo + inflación (NO el nivel; un tipo positivo no es bajista per se).
+  hawk(infl, rateDir){
+    if(infl==null && rateDir==null) return null;
+    let s = 0;
+    if(infl!=null) s += (infl-this.inflTarget)*0.5;
+    if(rateDir!=null) s += rateDir*0.6;
+    return s;
+  },
+
+  async loadData(){
+    const bis = cc => Sources.bisRate(cc).catch(()=>null);
+    const [usCpi, usFF, ezHicp, ezMrr, jp, au, nz, cn] = await Promise.all([
+      Sources.fredSeries('CPIAUCSL').catch(()=>null),
+      Sources.fredSeries('FEDFUNDS').catch(()=>null),
+      Sources.ecbSeries('ICP.M.U2.N.000000.4.ANR').catch(()=>null),
+      Sources.ecbSeries('FM.B.U2.EUR.4F.KR.MRR_FR.LEV').catch(()=>null),
+      bis('JP'), bis('AU'), bis('NZ'), bis('CN'),
+    ]);
+    const cb = {};
+    const add = (ccy,o) => { if(o && o.latest){ cb[ccy] = { rate:num(o.latest.value), dir:this.dirBack(o,6), date:o.latest.date }; } };
+    add('JPY',jp); add('AUD',au); add('NZD',nz); add('CNY',cn);
+    return {
+      usInfl:this.yoyMonthly(usCpi), usInflDate:usCpi&&usCpi.latest&&usCpi.latest.date,
+      usRateDir:this.dirDesc(usFF,3), usRate:num(usFF&&usFF.latest&&usFF.latest.value), usRateDate:usFF&&usFF.latest&&usFF.latest.date,
+      ezInfl:num(ezHicp&&ezHicp.latest&&ezHicp.latest.value), ezInflDate:ezHicp&&ezHicp.latest&&ezHicp.latest.date,
+      ezRateDir:this.dirAsc(ezMrr), ezRate:num(ezMrr&&ezMrr.latest&&ezMrr.latest.value), ezRateDate:ezMrr&&ezMrr.latest&&ezMrr.latest.date,
+      cb,
+    };
+  },
+
+  // evidencia: tipo de política de una divisa (US/EUR vía FRED/ECB; resto vía BIS)
+  pushRateEv(ccy,b,ev){
+    let d;
+    if(ccy==='USD') d = {rate:b.usRate, dir:b.usRateDir, date:b.usRateDate, src:'FRED · FEDFUNDS', who:'Fed'};
+    else if(ccy==='EUR') d = {rate:b.ezRate, dir:b.ezRateDir, date:b.ezRateDate, src:'ECB · MRR', who:'BCE'};
+    else { const c=b.cb&&b.cb[ccy]; if(c) d = {rate:c.rate, dir:c.dir, date:c.date, src:'BIS · CBPOL', who:this.cbName[ccy]||ccy}; }
+    if(d && d.rate!=null)
+      ev.push({tag:'Macro', data:`Tipo del ${d.who}: ${d.rate}%${d.dir>0?' (al alza)':d.dir<0?' (a la baja)':' (estable)'}`, date:d.date||'—', src:d.src, impact:'Tipo más alto o al alza → divisa más fuerte (carry y diferencial).'});
+  },
+
+  // ---------- dimensiones ----------
+  macroFX(id,b,ev){
+    const [base,quote] = this.pairCcy[id] || [];
+    this.pushRateEv(base,b,ev); this.pushRateEv(quote,b,ev);
+    if((base==='USD'||quote==='USD') && b.usInfl!=null)
+      ev.push({tag:'Macro', data:`IPC EE. UU. ${b.usInfl.toFixed(1)}% interanual`, date:b.usInflDate||'—', src:'FRED · CPIAUCSL', impact:'Inflación alta → Fed más restrictiva → dólar fuerte.'});
+    if((base==='EUR'||quote==='EUR') && b.ezInfl!=null)
+      ev.push({tag:'Macro', data:`IPC eurozona ${b.ezInfl.toFixed(1)}% interanual`, date:b.ezInflDate||'—', src:'ECB · HICP', impact:'Inflación alta → BCE más restrictivo → euro fuerte.'});
+    const sb = this.fxStance(base,b), sq = this.fxStance(quote,b);
+    if(sb==null && sq==null) return {dir:'flat', note:`Sin datos de política monetaria conectados para ${base} ni ${quote}.`};
+    const net = (sb||0) - (sq||0);
+    const dir = net>0.4?'up' : net<-0.4?'down' : 'flat';
+    const miss = sb==null?base : sq==null?quote : null;
+    return {dir, note:`Diferencial de tipos ${base}–${quote}` + (miss?` (falta ${miss}, sin conectar)`:'') + `: ${dir==='up'?base+' más fuerte':dir==='down'?quote+' más fuerte':'equilibrado'}.`};
+  },
+
+  macroIndex(id,b,ev){
+    if(id==='ftse') return {dir:'flat', note:'BoE no conectado (la política del Reino Unido manda en el FTSE). Neutral por falta de dato.'};
+    const us = ['spx','ndx','dji'].includes(id);
+    const inf = us?b.usInfl:b.ezInfl, infDate = us?b.usInflDate:b.ezInflDate, dirRate = us?b.usRateDir:b.ezRateDir, who = us?'Fed':'BCE';
+    if(inf!=null) ev.push({tag:'Macro', data:`IPC ${us?'EE. UU.':'eurozona'} ${inf.toFixed(1)}% interanual`, date:infDate||'—', src:us?'FRED · CPIAUCSL':'ECB · HICP', impact:`Inflación alta → ${who} restrictivo → tipos altos → presión sobre múltiplos.`});
+    const st = this.hawk(inf, dirRate);
+    if(st==null) return {dir:'flat', note:`Sin datos del ${who} conectados.`};
+    const dir = sgn(-st, 0.2);
+    return {dir: dir===1?'up':dir===-1?'down':'flat', note:`Política del ${who} ${st>0.2?'restrictiva (viento en contra)':st<-0.2?'acomodaticia (viento a favor)':'neutral'} para la renta variable.`};
+  },
+
+  async positioning(id,ev){
+    const map = this.cot[id];
+    if(!map) return {dir:'flat', note:'COT no conectado para este activo.'};
+    try{
+      const c = await Sources.cotReport(map.m); const L = c && c.latest;
+      if(!L || L.net==null) return {dir:'flat', note:`Sin datos COT para ${map.m}.`};
+      ev.push({tag:'Posicionamiento', data:`Neto no comercial en ${map.m}: ${L.net>0?'+':''}${Number(L.net).toLocaleString('es')}`, date:L.report_date||'—', src:'CFTC · COT', impact:'Neto positivo = especuladores largos en esa divisa. Los extremos pueden ser contrarian.'});
+      const ccyDir = sgn(L.net);
+      const d = map.base ? ccyDir : (ccyDir===0?0:-ccyDir);
+      return {dir: d===1?'up':d===-1?'down':'flat', note:`Especuladores ${L.net>=0?'largos':'cortos'} en ${map.m}; regla simple por el signo del neto.`};
+    }catch(e){ return {dir:'flat', note:'COT no disponible ahora.'}; }
+  },
+
+  async fundamentals(id,ev){
+    if(this.euIndex.has(id)) return {dir:'flat', note:'Fundamentales europeos no conectados (la SEC solo cubre EE. UU.).'};
+    const bw = this.bellwether[id];
+    if(!bw) return {dir:'flat', note:'Fundamentales no conectados para este activo.'};
+    try{
+      const d = await Sources.edgarConcept(bw.cik, bw.c);
+      const ser = (d && d.series) ? d.series.filter(x => x.form==='10-K' && x.val!=null) : [];
+      if(ser.length<2) return {dir:'flat', note:`Sin histórico anual suficiente de ${bw.n} en SEC.`};
+      const a = ser[ser.length-1], p = ser[ser.length-2]; const g = (a.val/p.val - 1)*100;
+      ev.push({tag:'Fundamental', data:`Ingresos de ${bw.n} ${g>0?'+':''}${g.toFixed(1)}% interanual`, date:a.end||'—', src:`SEC · ${bw.c}`, impact:'Crecimiento de ingresos de un valor de referencia (proxy del índice, no el índice entero).'});
+      const d2 = sgn(g, 1);
+      return {dir: d2===1?'up':d2===-1?'down':'flat', note:`Ingresos de ${bw.n} (valor representativo) ${g>1?'al alza':g<-1?'a la baja':'planos'} interanual.`};
+    }catch(e){ return {dir:'flat', note:'SEC no disponible ahora.'}; }
+  },
+
+  sentiment(){ return {dir:'flat', note:'Sin fuente de noticias conectada (Reuters/Bloomberg requieren licencia). Neutral.'}; },
+
+  async analyzeAsset(a,b){
+    const ev = [], dims = {};
+    dims.macro = a.klass==='fx' ? this.macroFX(a.id,b,ev) : this.macroIndex(a.id,b,ev);
+    dims.positioning = await this.positioning(a.id,ev);
+    dims.fundamentals = await this.fundamentals(a.id,ev);
+    dims.sentiment = this.sentiment();
+    let voted=0, agree=0;
+    for(const k in W){ const v=val(dims[k].dir); if(v){ voted++; agree+=v; } }
+    const coherence = voted ? +(4 + (Math.abs(agree)/voted)*5).toFixed(1) : 5.0;
+    return { dims, ev, coherence, thesis:this.thesis(dims) };
+  },
+
+  thesis(dims){
+    const d = computeBias(dims).dir;
+    const lead = d==='up'?'Sesgo alcista' : d==='down'?'Sesgo bajista' : 'Sin sesgo claro';
+    const drivers = [['macro','la política monetaria'],['positioning','el posicionamiento'],['fundamentals','los fundamentales']]
+      .filter(([k]) => dims[k] && dims[k].dir!=='flat').map(([,t]) => t);
+    return `${lead} a partir de datos oficiales: ` + (drivers.length ? `pesa ${drivers.join(' y ')}.` : 'las dimensiones conectadas se compensan.');
+  }
+};
+
+/* ============================================================
+   DATOS DE EJEMPLO  (ilustrativos — NO son señales reales)
+   ============================================================ */
+const DEMO = {
+  assets: [
+    { id:'eurusd', sym:'EUR/USD', nm:'Euro · Dólar', klass:'fx',
+      thesis:'El diferencial de tipos sigue jugando contra el euro mientras el BCE abre la puerta a un recorte.',
+      coherence:8.4,
+      dims:{
+        macro:{dir:'down', note:'Inflación de la eurozona revisada a la baja; mercado descuenta recorte del BCE antes que de la Fed.'},
+        positioning:{dir:'down', note:'Largos netos en EUR en mínimos de 14 semanas según el último COT.'},
+        sentiment:{dir:'flat', note:'Flujo de noticias mixto; sin catalizador direccional claro esta sesión.'},
+        fundamentals:{dir:'down', note:'Crecimiento relativo a favor de EE. UU.; sorpresas macro europeas en negativo.'}
+      },
+      ev:[
+        {tag:'Macro', data:'IPC eurozona 2,1% vs 2,3% esperado', date:'11 jun 2026 · 09:00 UTC', src:'Eurostat · prc_hicp', impact:'Refuerza la expectativa de recorte del BCE → EUR a la baja.'},
+        {tag:'Posicionamiento', data:'Largos netos en EUR caen a mínimo de 14 semanas', date:'10 jun 2026', src:'CFTC · COT', impact:'El mercado ya está corto; menos combustible bajista pero confirma sesgo.'},
+        {tag:'Macro', data:'Statement del BCE abre la puerta a pivot dovish', date:'05 jun 2026 · 12:15 UTC', src:'ECB · press release', impact:'Diferencial de tipos esperado se amplía contra el euro.'}
+      ]
+    },
+    { id:'usdjpy', sym:'USD/JPY', nm:'Dólar · Yen', klass:'fx',
+      thesis:'El carry sigue sosteniendo al par, pero el riesgo de intervención limita el recorrido al alza.',
+      coherence:6.9,
+      dims:{
+        macro:{dir:'up', note:'Diferencial de tipos EE. UU.–Japón aún muy amplio; Fed sin prisa por recortar.'},
+        positioning:{dir:'flat', note:'Cortos en JPY elevados; riesgo de squeeze si hay intervención del MoF.'},
+        sentiment:{dir:'up', note:'Tono risk-on en la sesión; demanda de carry.'},
+        fundamentals:{dir:'flat', note:'BoJ avanza despacio en la normalización; sin sorpresas recientes.'}
+      },
+      ev:[
+        {tag:'Macro', data:'Acta de la Fed: sin urgencia por recortar tipos', date:'12 jun 2026 · 18:00 UTC', src:'FED · FOMC minutes', impact:'Mantiene amplio el diferencial → USD/JPY sostenido.'},
+        {tag:'Posicionamiento', data:'Cortos netos en JPY cerca de extremos de 2024', date:'10 jun 2026', src:'CFTC · COT', impact:'Riesgo asimétrico: una intervención podría disparar un squeeze.'},
+        {tag:'Sentiment', data:'Verbal warning del MoF sobre movimientos del yen', date:'09 jun 2026', src:'Reuters', impact:'Pone techo psicológico; convicción alcista contenida.'}
+      ]
+    },
+    { id:'gbpusd', sym:'GBP/USD', nm:'Libra · Dólar', klass:'fx',
+      thesis:'Servicios pegajosos mantienen al BoE cauto; la libra encuentra suelo relativo.',
+      coherence:5.8,
+      dims:{
+        macro:{dir:'flat', note:'Inflación de servicios aún por encima del objetivo; BoE en pausa.'},
+        positioning:{dir:'up', note:'Cortos en GBP recortándose tras el último COT.'},
+        sentiment:{dir:'flat', note:'Sin catalizador; rango técnico.'},
+        fundamentals:{dir:'flat', note:'Datos de actividad estables, sin sorpresa direccional.'}
+      },
+      ev:[
+        {tag:'Macro', data:'IPC servicios Reino Unido 4,8%, persistente', date:'11 jun 2026 · 06:00 UTC', src:'ONS · CPI', impact:'BoE sin margen para recortar pronto → suelo para GBP.'},
+        {tag:'Posicionamiento', data:'Cortos netos en GBP se reducen por segunda semana', date:'10 jun 2026', src:'CFTC · COT', impact:'Menos presión bajista acumulada.'}
+      ]
+    },
+    { id:'audusd', sym:'AUD/USD', nm:'Dólar australiano · Dólar', klass:'fx',
+      thesis:'Materias primas firmes y un RBA todavía hawkish dan soporte al aussie.',
+      coherence:7.6,
+      dims:{
+        macro:{dir:'up', note:'RBA mantiene sesgo restrictivo; inflación local aún por encima del rango.'},
+        positioning:{dir:'up', note:'Construcción de largos en AUD en las últimas semanas.'},
+        sentiment:{dir:'up', note:'Apetito por riesgo y demanda de commodities.'},
+        fundamentals:{dir:'flat', note:'Datos de China mixtos; principal factor de riesgo.'}
+      },
+      ev:[
+        {tag:'Macro', data:'RBA mantiene tipos y tono restrictivo', date:'10 jun 2026 · 04:30 UTC', src:'RBA · statement', impact:'Diferencial favorable al AUD frente a una Fed que mira a recortar.'},
+        {tag:'Fundamental', data:'Precio del mineral de hierro al alza semanal', date:'12 jun 2026', src:'Reuters', impact:'Mejora términos de intercambio de Australia → AUD alcista.'}
+      ]
+    },
+    { id:'usdcad', sym:'USD/CAD', nm:'Dólar · Dólar canadiense', klass:'fx',
+      thesis:'Crudo firme y un BoC más cómodo con la inflación pesan sobre el par.',
+      coherence:6.2,
+      dims:{
+        macro:{dir:'down', note:'BoC señala que la inflación converge al objetivo.'},
+        positioning:{dir:'flat', note:'Posicionamiento neutral según el COT.'},
+        sentiment:{dir:'down', note:'Crudo al alza apoya al CAD.'},
+        fundamentals:{dir:'flat', note:'Sin sorpresas en actividad canadiense.'}
+      },
+      ev:[
+        {tag:'Fundamental', data:'WTI sube en la semana por tensión de oferta', date:'12 jun 2026', src:'Reuters', impact:'CAD se aprecia → USD/CAD a la baja.'},
+        {tag:'Macro', data:'BoC ve inflación acercándose al 2%', date:'04 jun 2026', src:'BoC · statement', impact:'Reduce el diferencial a favor del USD.'}
+      ]
+    },
+    { id:'usdchf', sym:'USD/CHF', nm:'Dólar · Franco suizo', klass:'fx',
+      thesis:'El SNB tolera un franco más débil; ligero sesgo al alza del par.',
+      coherence:5.1,
+      dims:{
+        macro:{dir:'up', note:'SNB con margen para una política más laxa; inflación suiza muy baja.'},
+        positioning:{dir:'flat', note:'Sin extremos en el posicionamiento.'},
+        sentiment:{dir:'flat', note:'Demanda de refugio intermitente.'},
+        fundamentals:{dir:'flat', note:'Sin catalizador reciente.'}
+      },
+      ev:[
+        {tag:'Macro', data:'Inflación suiza en 1,0%, en la parte baja del rango', date:'06 jun 2026', src:'BFS · IPC', impact:'Da margen al SNB → franco más débil, USD/CHF al alza.'}
+      ]
+    },
+    { id:'nzdusd', sym:'NZD/USD', nm:'Dólar neozelandés · Dólar', klass:'fx',
+      thesis:'Arrastrado por el aussie y el apetito por riesgo, con sesgo alcista suave.',
+      coherence:6.0,
+      dims:{
+        macro:{dir:'up', note:'RBNZ mantiene tono firme.'},
+        positioning:{dir:'flat', note:'Posicionamiento ligero.'},
+        sentiment:{dir:'up', note:'Risk-on apoya a las divisas de alta beta.'},
+        fundamentals:{dir:'flat', note:'Dependiente de China y lácteos.'}
+      },
+      ev:[
+        {tag:'Macro', data:'RBNZ reitera sesgo restrictivo en su revisión', date:'09 jun 2026', src:'RBNZ · statement', impact:'Soporte para el NZD frente al USD.'}
+      ]
+    },
+    { id:'eurgbp', sym:'EUR/GBP', nm:'Euro · Libra', klass:'fx',
+      thesis:'Cruce sin dirección clara: BCE más dovish frente a BoE en pausa se compensan.',
+      coherence:4.4,
+      dims:{
+        macro:{dir:'flat', note:'BCE recorta antes, BoE aguanta; efectos opuestos.'},
+        positioning:{dir:'flat', note:'Sin sesgo de posicionamiento.'},
+        sentiment:{dir:'flat', note:'Rango.'},
+        fundamentals:{dir:'flat', note:'Crecimiento similar a ambos lados.'}
+      },
+      ev:[
+        {tag:'Macro', data:'Divergencia BCE–BoE: recorte esperado antes en la eurozona', date:'05 jun 2026', src:'ECB · BoE', impact:'Sesgo levemente bajista para EUR/GBP, sin convicción.'}
+      ]
+    },
+    { id:'eurjpy', sym:'EUR/JPY', nm:'Euro · Yen', klass:'fx',
+      thesis:'Sostenido por el carry pese a un euro débil; el yen sigue penalizado.',
+      coherence:5.6,
+      dims:{
+        macro:{dir:'flat', note:'Euro débil contra yen aún más débil.'},
+        positioning:{dir:'up', note:'Cortos en yen dominan el cruce.'},
+        sentiment:{dir:'up', note:'Risk-on favorece el carry.'},
+        fundamentals:{dir:'flat', note:'Sin sorpresas.'}
+      },
+      ev:[
+        {tag:'Posicionamiento', data:'Cortos en JPY siguen en niveles extremos', date:'10 jun 2026', src:'CFTC · COT', impact:'Mantiene al cruce arriba mientras dure el risk-on.'}
+      ]
+    },
+    { id:'usdcny', sym:'USD/CNY', nm:'Dólar · Yuan', klass:'fx',
+      thesis:'El yuan está muy gestionado por el PBoC, así que la señal macro es más débil que en un par libre. Se lee el diferencial de tipos, con cautela.',
+      coherence:4.6,
+      dims:{
+        macro:{dir:'up', note:'Diferencial de tipos a favor del dólar; el PBoC mantiene tipos bajos para apoyar la economía.'},
+        positioning:{dir:'flat', note:'Sin COT líquido de yuan; posicionamiento no conectado.'},
+        sentiment:{dir:'flat', note:'Sin fuente de noticias conectada.'},
+        fundamentals:{dir:'flat', note:'No aplica a una divisa.'}
+      },
+      ev:[
+        {tag:'Macro', data:'El PBoC mantiene tipos bajos frente a una Fed con tipos altos', date:'jun 2026', src:'BIS · CBPOL', impact:'Diferencial a favor del dólar → sesgo alcista del par, con la cautela de ser una divisa gestionada.'}
+      ]
+    },
+
+    { id:'spx', sym:'SPX', nm:'S&P 500', klass:'idx',
+      thesis:'Beneficios resilientes y una Fed que aún no recorta sostienen el índice, pero las valoraciones aprietan.',
+      coherence:7.2,
+      dims:{
+        macro:{dir:'flat', note:'Fed sin prisa; tipos altos algo más de tiempo limitan el múltiplo.'},
+        positioning:{dir:'up', note:'Flujos a renta variable estables; sin extremos de euforia.'},
+        sentiment:{dir:'up', note:'Tono constructivo tras la temporada de resultados.'},
+        fundamentals:{dir:'up', note:'Guías al alza en tecnología y consumo; márgenes sostenidos.'}
+      },
+      ev:[
+        {tag:'Fundamental', data:'Resultados del SP500 superan estimaciones en agregado', date:'30 may 2026', src:'Earnings · agregado', impact:'Beneficios resilientes → soporte al índice.'},
+        {tag:'Macro', data:'Acta de la Fed: tipos altos algo más de tiempo', date:'12 jun 2026 · 18:00 UTC', src:'FED · FOMC minutes', impact:'Limita la expansión de múltiplos; convicción contenida.'}
+      ]
+    },
+    { id:'ndx', sym:'NDX', nm:'Nasdaq 100', klass:'idx',
+      thesis:'La demanda de IA y data center sigue marcando el paso; el liderazgo tecnológico se mantiene.',
+      coherence:8.1,
+      dims:{
+        macro:{dir:'flat', note:'Sensible a tipos; la Fed en pausa es neutral para el múltiplo.'},
+        positioning:{dir:'up', note:'Concentración alta en megacaps; flujos positivos.'},
+        sentiment:{dir:'up', note:'Narrativa de IA firme tras los últimos resultados.'},
+        fundamentals:{dir:'up', note:'Guías al alza en semiconductores y cloud.'}
+      },
+      ev:[
+        {tag:'Fundamental', data:'NVDA bate ingresos y eleva su guía del próximo trimestre', date:'27 may 2026 · 20:20 UTC', src:'NVDA · 8-K (SEC)', impact:'Demanda de data center sostenida → NDX alcista.'},
+        {tag:'Fundamental', data:'Capex en IA revisado al alza por las grandes tecnológicas', date:'28 may 2026', src:'Earnings · GICS Tech', impact:'Refuerza el ciclo de inversión → soporte estructural.'},
+        {tag:'Posicionamiento', data:'Flujos netos a ETFs tecnológicos positivos cuatro semanas', date:'09 jun 2026', src:'ETF flows', impact:'Demanda sostenida; vigilar concentración.'}
+      ]
+    },
+    { id:'dji', sym:'DJI', nm:'Dow Jones · EE. UU. 30', klass:'idx',
+      thesis:'Sesgo cíclico e industrial: beneficios resilientes y una Fed en pausa sostienen al índice, con menos peso tecnológico que el S&P 500.',
+      coherence:6.8,
+      dims:{
+        macro:{dir:'flat', note:'Fed sin prisa por recortar; tipos altos algo más de tiempo, neutral para el múltiplo.'},
+        positioning:{dir:'up', note:'Rotación hacia value e industriales en las últimas semanas.'},
+        sentiment:{dir:'flat', note:'Tono estable, sin catalizador propio.'},
+        fundamentals:{dir:'up', note:'Resultados de industriales y bancos por encima de lo esperado.'}
+      },
+      ev:[
+        {tag:'Fundamental', data:'Industriales y banca baten estimaciones de beneficio', date:'29 may 2026', src:'Earnings · agregado', impact:'Apoya al Dow por su sesgo cíclico.'},
+        {tag:'Macro', data:'Acta de la Fed: tipos altos algo más de tiempo', date:'12 jun 2026 · 18:00 UTC', src:'FED · FOMC minutes', impact:'Neutral para valoraciones; convicción contenida.'}
+      ]
+    },
+    { id:'dax', sym:'DAX', nm:'Alemania 40', klass:'idx',
+      thesis:'Exportadoras e industriales sensibles a China; el giro dovish del BCE da soporte, pero la actividad alemana sigue floja.',
+      coherence:5.4,
+      dims:{
+        macro:{dir:'up', note:'El BCE abre la puerta a recortes; tipos más bajos apoyan a la renta variable europea.'},
+        positioning:{dir:'flat', note:'Flujos a renta variable europea estables, sin extremos.'},
+        sentiment:{dir:'down', note:'Datos de actividad alemana débiles pesan en el ánimo.'},
+        fundamentals:{dir:'flat', note:'Resultados mixtos; la exposición a China es el principal riesgo.'}
+      },
+      ev:[
+        {tag:'Macro', data:'El BCE señala recortes si la inflación sigue cediendo', date:'05 jun 2026 · 12:15 UTC', src:'ECB · press release', impact:'Tipos más bajos esperados → soporte para múltiplos.'},
+        {tag:'Macro', data:'Producción industrial alemana por debajo de lo esperado', date:'06 jun 2026', src:'Destatis · producción', impact:'Frena el sesgo alcista; convicción baja.'}
+      ]
+    },
+    { id:'cac', sym:'CAC 40', nm:'Francia 40', klass:'idx',
+      thesis:'Fuerte peso del lujo y sensible a la demanda china; el BCE dovish ayuda, pero el sector lujo modera el ánimo.',
+      coherence:5.0,
+      dims:{
+        macro:{dir:'up', note:'Recortes del BCE en el horizonte apoyan a la renta variable europea.'},
+        positioning:{dir:'flat', note:'Sin sesgo claro de flujos.'},
+        sentiment:{dir:'flat', note:'Demanda china incierta para el sector lujo.'},
+        fundamentals:{dir:'down', note:'Ventas del sector lujo más débiles por la demanda china.'}
+      },
+      ev:[
+        {tag:'Macro', data:'El BCE encamina recortes de tipos', date:'05 jun 2026 · 12:15 UTC', src:'ECB · press release', impact:'Soporte para múltiplos europeos.'},
+        {tag:'Fundamental', data:'Las ventas del lujo se enfrían por China', date:'10 jun 2026', src:'Earnings · GICS', impact:'Lastra al CAC por su composición → sesgo neutro.'}
+      ]
+    },
+    { id:'ibex', sym:'IBEX 35', nm:'España 35', klass:'idx',
+      thesis:'Muy bancario: el calendario de tipos manda. Los recortes del BCE recortan márgenes, pero la economía española aguanta mejor que el núcleo.',
+      coherence:5.6,
+      dims:{
+        macro:{dir:'flat', note:'Los recortes del BCE pesan en el margen bancario, pero España crece por encima de la media.'},
+        positioning:{dir:'up', note:'Entradas en banca española en las últimas semanas.'},
+        sentiment:{dir:'up', note:'Tono constructivo sobre los periféricos.'},
+        fundamentals:{dir:'up', note:'Resultados de la banca por encima de lo esperado.'}
+      },
+      ev:[
+        {tag:'Fundamental', data:'La gran banca española bate previsiones de beneficio', date:'28 may 2026', src:'Earnings · agregado', impact:'Motor del IBEX por su peso financiero → alcista.'},
+        {tag:'Macro', data:'El PIB de España se revisa al alza frente al núcleo europeo', date:'30 may 2026', src:'INE · PIB', impact:'Mejor fondo macro relativo → soporte.'}
+      ]
+    },
+    { id:'ftse', sym:'FTSE 100', nm:'Reino Unido 100', klass:'idx',
+      thesis:'Defensivo y con peso de energía y materias primas; el crudo firme y una libra contenida apoyan a las exportadoras.',
+      coherence:6.4,
+      dims:{
+        macro:{dir:'flat', note:'BoE en pausa por la inflación de servicios pegajosa; efecto neutro.'},
+        positioning:{dir:'flat', note:'Flujos estables.'},
+        sentiment:{dir:'flat', note:'Apetito moderado por defensivos y dividendos.'},
+        fundamentals:{dir:'up', note:'Energéticas y mineras se benefician del crudo y los metales firmes.'}
+      },
+      ev:[
+        {tag:'Fundamental', data:'Energéticas y mineras lideran por el crudo y los metales', date:'12 jun 2026', src:'Earnings · GICS', impact:'El sesgo del FTSE hacia recursos da soporte.'},
+        {tag:'Macro', data:'El BoE mantiene tipos por la inflación de servicios persistente', date:'09 jun 2026', src:'BoE · ONS', impact:'Efecto neutro sobre el índice.'}
+      ]
+    },
+    { id:'estx50', sym:'ESTX 50', nm:'EuroStoxx 50', klass:'idx',
+      thesis:'Termómetro de la gran capitalización europea: el giro dovish del BCE inclina la balanza al alza pese a una macro tibia.',
+      coherence:6.1,
+      dims:{
+        macro:{dir:'up', note:'El BCE encamina recortes; tipos más bajos apoyan a la renta variable europea.'},
+        positioning:{dir:'flat', note:'Rotación incipiente hacia Europa por valoración frente a EE. UU.'},
+        sentiment:{dir:'down', note:'Macro de la eurozona tibia, sin catalizador.'},
+        fundamentals:{dir:'up', note:'Resultados sólidos en bancos y defensa compensan al ciclo.'}
+      },
+      ev:[
+        {tag:'Macro', data:'El BCE abre la puerta a recortes este verano', date:'05 jun 2026 · 12:15 UTC', src:'ECB · press release', impact:'Tipos más bajos esperados → soporte para múltiplos.'},
+        {tag:'Fundamental', data:'Bancos y defensa europeos baten estimaciones', date:'29 may 2026', src:'Earnings · GICS', impact:'Refuerza el sesgo alcista de la gran capitalización.'}
+      ]
+    }
+  ],
+
+  calendar: [
+    { day:'Hoy · viernes 13 jun', items:[
+      {time:'12:30', cc:'US', name:'Ventas minoristas (mayo)', sub:'Consumo · termómetro de demanda', imp:3, assets:['USD','SPX','NDX']},
+      {time:'14:00', cc:'US', name:'Confianza del consumidor (U. Michigan)', sub:'Expectativas de inflación', imp:2, assets:['USD']},
+      {time:'—', cc:'JP', name:'Atento a intervención del MoF', sub:'Vigilancia verbal sobre el yen', imp:2, assets:['USD/JPY','EUR/JPY']}
+    ]},
+    { day:'Lunes 16 jun', items:[
+      {time:'09:00', cc:'EU', name:'IPC final eurozona (mayo)', sub:'Confirma la lectura preliminar', imp:2, assets:['EUR/USD','EUR/GBP']},
+      {time:'13:00', cc:'US', name:'Discurso de miembro de la Fed', sub:'Pistas sobre el calendario de recortes', imp:2, assets:['USD','SPX']}
+    ]},
+    { day:'Miércoles 18 jun', items:[
+      {time:'18:00', cc:'US', name:'Decisión de tipos de la Fed (FOMC)', sub:'Tipo y proyecciones (dot plot)', imp:3, assets:['USD','SPX','NDX','USD/JPY']},
+      {time:'18:30', cc:'US', name:'Rueda de prensa de Powell', sub:'Tono y guía a futuro', imp:3, assets:['USD','SPX','NDX']}
+    ]},
+    { day:'Jueves 19 jun', items:[
+      {time:'11:00', cc:'GB', name:'Decisión de tipos del BoE', sub:'Votación y guía', imp:3, assets:['GBP/USD','EUR/GBP']},
+      {time:'03:00', cc:'JP', name:'Decisión de tipos del BoJ', sub:'Ritmo de normalización', imp:3, assets:['USD/JPY','EUR/JPY']}
+    ]}
+  ],
+
+  feed: [
+    {fresh:true, time:'14:31 UTC', src:'BLS', cc:'US', text:'Ventas minoristas de mayo +0,4% vs +0,3% esperado.', asset:'USD', react:'up'},
+    {time:'13:50 UTC', src:'Reuters', cc:'JP', text:'El Ministerio de Finanzas reitera que vigila los movimientos del yen "con sentido de urgencia".', asset:'USD/JPY', react:'flat'},
+    {time:'12:10 UTC', src:'Reuters', cc:'EU', text:'Fuente del BCE: el recorte de julio sigue sobre la mesa si los datos acompañan.', asset:'EUR/USD', react:'down'},
+    {time:'11:05 UTC', src:'Reuters', cc:'XX', text:'El crudo Brent sube un 1,8% por tensiones de oferta.', asset:'USD/CAD', react:'down'},
+    {time:'09:00 UTC', src:'ONS', cc:'GB', text:'IPC de servicios del Reino Unido se mantiene pegajoso en 4,8%.', asset:'GBP/USD', react:'flat'},
+    {time:'08:30 UTC', src:'Eurostat', cc:'EU', text:'Producción industrial de la eurozona por debajo de lo esperado.', asset:'EUR/USD', react:'down'},
+    {time:'04:30 UTC', src:'RBA', cc:'AU', text:'Acta del RBA confirma un sesgo restrictivo durante más tiempo.', asset:'AUD/USD', react:'up'},
+    {time:'Ayer 20:20', src:'SEC', cc:'US', text:'NVDA presenta 8-K: bate ingresos y eleva guía del próximo trimestre.', asset:'NDX', react:'up'}
+  ],
+
+  sources: [
+    {mode:'live',  org:'BCE (vía Frankfurter)', what:'Tipos de cambio de referencia', ep:'api.frankfurter.dev/v1/latest'},
+    {mode:'live',  org:'CFTC', what:'Commitments of Traders (posicionamiento)', ep:'publicreporting.cftc.gov/resource'},
+    {mode:'proxy', org:'FRED · Reserva Federal', what:'Series macro (IPC, tipos, paro)', ep:'api.stlouisfed.org/fred/series'},
+    {mode:'proxy', org:'BCE · SDW', what:'Estadísticas y tipos de la eurozona', ep:'data-api.ecb.europa.eu/service/data'},
+    {mode:'proxy', org:'SEC EDGAR', what:'Resultados y filings (8-K, 10-K)', ep:'data.sec.gov/api/xbrl/companyfacts'},
+    {mode:'proxy', org:'BIS · CBPOL', what:'Tipos de política (JP, AU, NZ, CN…)', ep:'stats.bis.org/api/v2'},
+    {mode:'proxy', org:'BoE · BoJ · RBA · SNB · BoC · RBNZ', what:'Decisiones y comunicados', ep:'schedules + statements oficiales'},
+    {mode:'proxy', org:'BLS · BEA · Eurostat · ONS', what:'Calendario de datos macro', ep:'release calendars'},
+    {mode:'soon',  org:'On-chain · ETF flows', what:'Cripto (en camino)', ep:'en desarrollo'}
+  ]
+};
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const DIRTXT = {up:'Alcista', down:'Bajista', flat:'Neutral'};
+const ARROW  = {up:'▲', down:'▼', flat:'■'};
+
+// precompute bias for each asset (transparent engine)
+DEMO.assets.forEach(a=>{ a.bias = a.soon ? {dir:'flat',conv:0} : computeBias(a.dims); });
+
+function convDots(dir, n){
+  let h='';
+  for(let i=0;i<5;i++) h+=`<i class="${i<n?'on':''}"></i>`;
+  return `<span class="conv ${dir}">${h}</span>`;
+}
+
+function cardHTML(a){
+  if(a.soon){
+    return `<button class="card flat" data-id="${a.id}">
+      <div class="card-top">
+        <div class="tick"><span class="sym">${a.sym}</span><span class="nm">${a.nm}</span></div>
+        <div class="card-right"><span class="dir flat"><span class="ar">·</span> En camino</span></div>
+      </div>
+      <div class="card-driver">${a.thesis}</div>
+    </button>`;
+  }
+  const d=a.bias.dir;
+  return `<button class="card ${d}" data-id="${a.id}">
+    <div class="card-top">
+      <div class="tick"><span class="sym">${a.sym}</span><span class="nm">${a.nm}</span></div>
+      <div class="card-right">
+        <span class="dir ${d}"><span class="ar">${ARROW[d]}</span> ${DIRTXT[d]}</span>
+        ${convDots(d, a.bias.conv)}
+      </div>
+    </div>
+    <div class="card-driver">${a.thesis}</div>
+    <div class="card-foot">
+      <span class="lab">Convicción ${a.bias.conv}/5</span>
+      <span class="go">Ver evidencia →</span>
+    </div>
+  </button>`;
+}
+
+function renderCards(filter='all'){
+  const wrap=$('#cardsWrap');
+  const fx = DEMO.assets.filter(a=>a.klass==='fx');
+  const idx= DEMO.assets.filter(a=>a.klass==='idx');
+  let h='';
+  if(filter==='all'||filter==='fx'){
+    h+=`<div class="klass-head">Forex</div><div class="cards">`+fx.map(cardHTML).join('')+`</div>`;
+  }
+  if(filter==='all'||filter==='idx'){
+    h+=`<div class="klass-head">Índices</div><div class="cards">`+idx.map(cardHTML).join('')+`</div>`;
+  }
+  wrap.innerHTML=h;
+  wrap.querySelectorAll('.card').forEach(c=>c.onclick=()=>openSheet(c.dataset.id));
+}
+
+function dimRow(name, tag, dim){
+  return `<div class="dim">
+    <div class="dim-mark ${dim.dir}">${ARROW[dim.dir]}</div>
+    <div class="dim-body">
+      <div class="dim-name">${name} <span class="dim-tag">${tag}</span></div>
+      <div class="dim-note">${dim.note}</div>
+    </div>
+  </div>`;
+}
+
+function openSheet(id){
+  const a=DEMO.assets.find(x=>x.id===id);
+  if(!a) return;
+  const d=a.bias.dir;
+  let body=`
+    <div class="verdict">
+      <div class="verdict-top">
+        <div><div class="sym">${a.sym}</div><div class="nm">${a.nm}</div></div>
+        <span class="dir ${d}"><span class="ar">${ARROW[d]}</span> ${DIRTXT[d]}</span>
+      </div>
+      <div class="verdict-thesis">${a.thesis}</div>`;
+  if(!a.soon){
+    body+=`<div class="coh">
+        <span>Coherencia</span>
+        <span class="bar"><i style="width:${Math.round(a.coherence*10)}%"></i></span>
+        <span class="val">${a.coherence.toFixed(1)}/10</span>
+      </div>`;
+  }
+  body+=`</div>`;
+
+  if(a.soon){
+    body+=`<p class="empty">Cobertura en desarrollo. Este activo entra incluido cuando se valide su pipeline de fuentes.</p>`;
+  }else{
+    body+=`<div class="sec-label">Cuatro dimensiones</div>`;
+    body+=dimRow('Macro','FED · ECB · FRED', a.dims.macro);
+    body+=dimRow('Posicionamiento','COT · flujos', a.dims.positioning);
+    body+=dimRow('Sentiment','Reuters · agencias', a.dims.sentiment);
+    body+=dimRow('Fundamentales','Earnings · SEC', a.dims.fundamentals);
+
+    body+=`<div class="sec-label">Cadena de evidencia</div><div class="chain">`;
+    body+=a.ev.map(e=>`<div class="ev">
+        <div class="ev-tag">${e.tag}</div>
+        <div class="ev-data">${e.data}</div>
+        <div class="ev-meta"><span><b>Fecha</b> ${e.date}</span><span><b>Fuente</b> ${e.src}</span></div>
+        <div class="ev-impact">${e.impact}</div>
+      </div>`).join('');
+    body+=`</div>`;
+  }
+  body+=`<p class="sheet-note">Convicción y dirección se calculan a partir de las cuatro dimensiones con pesos declarados (macro 35%, posicionamiento 25%, fundamentales 25%, sentiment 15%). Datos de ejemplo. No es asesoría financiera.</p>`;
+
+  $('#sheetBody').innerHTML=body;
+  $('#sheetBody').scrollTop=0;
+  $('#sheet').classList.add('open');
+  $('#scrim').classList.add('open');
+}
+function closeSheet(){ $('#sheet').classList.remove('open'); $('#scrim').classList.remove('open'); }
+$('#scrim').onclick=closeSheet;
+
+function renderCalendar(){
+  $('#calWrap').innerHTML = DEMO.calendar.map(g=>`
+    <div class="cal-day"><span class="badge">›</span> ${g.day}</div>
+    <div class="cal">${g.items.map(it=>`
+      <div class="cal-item">
+        <div class="cal-time"><div class="t">${it.time}</div><div class="cc">${it.cc}</div></div>
+        <div class="cal-main">
+          <div class="ev-name">${it.name}</div>
+          <div class="ev-sub">${it.sub}</div>
+          <div class="imp">${[1,2,3].map(n=>`<i class="${n<=it.imp?'on':''}"></i>`).join('')}</div>
+          <div class="cal-assets">${it.assets.map(x=>`<span class="tagx">${x}</span>`).join('')}</div>
+        </div>
+      </div>`).join('')}</div>`).join('');
+}
+
+function renderFeed(){
+  $('#feedWrap').innerHTML = DEMO.feed.map(f=>`
+    <div class="feed-item ${f.fresh?'fresh':''}">
+      <div class="feed-rail"><div class="node"></div></div>
+      <div class="feed-body">
+        <div class="feed-head"><span class="src">${f.src}</span><span>· ${f.cc} ·</span><span>${f.time}</span></div>
+        <div class="feed-text">${f.text}</div>
+        <span class="feed-react ${f.react}"><span class="mono">${ARROW[f.react]}</span> ${f.asset}</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderSources(){
+  const probe = LIVE
+    ? `<div class="src-card" id="liveProbe"><div class="src-item">
+         <div class="src-status proxy"></div>
+         <div class="src-body"><div class="src-name"><span class="org">Comprobando proxy…</span></div>
+         <div class="src-ep">${PROXY}</div></div></div></div>`
+    : `<div class="callout" style="margin:0 0 14px;"><b>Modo demo.</b> Para datos oficiales en vivo: despliega <span class="mono">worker.js</span>, pon <span class="mono">USE_DEMO = false</span> y la URL del proxy en <span class="mono">PROXY</span> (arriba del script).</div>`;
+  $('#srcWrap').innerHTML = probe + `<div class="src-card">${DEMO.sources.map(s=>`
+    <div class="src-item">
+      <div class="src-status ${s.mode}"></div>
+      <div class="src-body">
+        <div class="src-name"><span class="org">${s.org}</span> &nbsp;<span class="what">${s.what}</span></div>
+        <div class="src-ep">${s.ep}</div>
+        <div class="src-mode ${s.mode}">${s.mode==='live'?'conexión directa':s.mode==='proxy'?'vía proxy':'en camino'}</div>
+      </div>
+    </div>`).join('')}</div>`;
+  if(LIVE){ probeLive(); } else { setLive('demo'); }
+}
+
+// Prueba de conexión: trae datos OFICIALES reales por el proxy.
+// (Esto son datos verificables; los sesgos siguen siendo de ejemplo.)
+async function probeLive(){
+  const box = $('#liveProbe'); if(!box) return;
+  try{
+    const [fx, cpi] = await Promise.all([
+      Sources.fxReference('EUR','USD,GBP,JPY'),
+      Sources.fredSeries('CPIAUCSL').catch(()=>null)
+    ]);
+    let rows = '';
+    if(fx && fx.rates){
+      const r = fx.rates;
+      rows += `<div class="src-item"><div class="src-status live"></div><div class="src-body">
+        <div class="src-name"><span class="org">BCE · tipos de referencia</span> &nbsp;<span class="what">${fx.date||''}</span></div>
+        <div class="src-ep">EUR/USD ${r.USD ?? '—'} · EUR/GBP ${r.GBP ?? '—'} · EUR/JPY ${r.JPY ?? '—'}</div>
+        <div class="src-mode live">en vivo · oficial</div></div></div>`;
+    }
+    if(cpi && cpi.latest){
+      rows += `<div class="src-item"><div class="src-status live"></div><div class="src-body">
+        <div class="src-name"><span class="org">FRED · IPC EE. UU.</span> &nbsp;<span class="what">${cpi.latest.date||''}</span></div>
+        <div class="src-ep">índice CPIAUCSL · ${cpi.latest.value ?? '—'}</div>
+        <div class="src-mode live">en vivo · oficial</div></div></div>`;
+    }
+    box.innerHTML = rows || `<div class="src-item"><div class="src-status soon"></div><div class="src-body"><div class="src-name"><span class="org">Proxy conectado, sin datos de prueba.</span></div></div></div>`;
+    setLive('live');
+  }catch(e){
+    setLive('error');
+    box.innerHTML = `<div class="src-item"><div class="src-status" style="background:var(--down)"></div><div class="src-body">
+      <div class="src-name"><span class="org">No se pudo conectar al proxy</span></div>
+      <div class="src-ep">${PROXY} · ${String(e.message||e)}</div>
+      <div class="src-mode" style="color:var(--down)">revisa la URL y que tu origen esté en ALLOWED_ORIGINS</div></div></div>`;
+  }
+}
+
+/* ---- navegación entre vistas ---- */
+$('#tabbar').querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    const v=t.dataset.v;
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+    $('#v-'+v).classList.add('active');
+    $('#tabbar').querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-current', x===t?'true':'false'));
+    window.scrollTo({top:0});
+  };
+});
+
+/* ---- chips de filtro ---- */
+$('#chips').querySelectorAll('.chip').forEach(c=>{
+  c.onclick=()=>{
+    $('#chips').querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+    c.setAttribute('aria-pressed','true');
+    curFilter = c.dataset.f;
+    renderCards(curFilter);
+  };
+});
+
+/* ---- PWA: manifest inline (instalable al hospedar) ---- */
+(function(){
+  const mani={ name:'Meridiano · Macro Desk', short_name:'Meridiano',
+    display:'standalone', background_color:'#0E1116', theme_color:'#0E1116',
+    start_url:'.', icons:[] };
+  const blob=new Blob([JSON.stringify(mani)],{type:'application/manifest+json'});
+  const l=document.createElement('link'); l.rel='manifest'; l.href=URL.createObjectURL(blob);
+  document.head.appendChild(l);
+})();
+
+/* ---- init ---- */
+var curFilter = 'all';
+function setStrip(t){ const s = document.querySelector('.strip span:last-child'); if(s) s.textContent = t; }
+function setLive(state){
+  const p = document.getElementById('demoPill'); if(!p) return;
+  if(state==='live'){ p.textContent = 'En vivo'; p.className = 'pill live'; }
+  else if(state==='error'){ p.textContent = 'Sin conexión'; p.className = 'pill err'; }
+  else { p.textContent = 'Demo'; p.className = 'pill'; }
+}
+
+async function boot(){
+  renderCards(curFilter);
+  renderCalendar();
+  renderFeed();
+  renderSources();
+  if(!LIVE) return;   // modo demo: sesgos de ejemplo, ya renderizados
+  setStrip('Sesgos por reglas transparentes sobre datos oficiales · reglas ilustrativas sin validar · no es asesoría financiera.');
+  try{
+    const bundle = await Analyze.loadData();
+    await Promise.all(DEMO.assets.filter(a => !a.soon).map(async a => {
+      try{
+        const r = await Analyze.analyzeAsset(a, bundle);
+        a.dims = r.dims; a.ev = r.ev; a.coherence = r.coherence; a.thesis = r.thesis;
+        a.bias = computeBias(a.dims); a.live = true;
+      }catch(e){ a.live = false; }   // ese activo se queda en ejemplo
+    }));
+    renderCards(curFilter);
+  }catch(e){
+    setStrip('No se pudieron cargar los datos oficiales; se muestra el ejemplo. (' + String(e.message||e) + ')');
+  }
+}
+boot();
+</script>
+</body>
+</html>
