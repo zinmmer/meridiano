@@ -557,16 +557,30 @@ const Analyze = {
     return {dir: dir===1?'up':dir===-1?'down':'flat', note:`Política del ${who} ${st>0.2?'restrictiva (viento en contra)':st<-0.2?'acomodaticia (viento a favor)':'neutral'} para la renta variable.`};
   },
 
+  // antigüedad en días de una fecha ISO (null si no se puede leer)
+  daysSince(dateStr){
+    if(!dateStr) return null;
+    const t = Date.parse(dateStr);
+    return isNaN(t) ? null : (Date.now() - t) / 86400000;
+  },
+
   async positioning(id,ev){
     const map = this.cot[id];
     if(!map) return {dir:'flat', note:'COT no conectado para este activo.'};
     try{
       const c = await Sources.cotReport(map.m); const L = c && c.latest;
       if(!L || L.net==null) return {dir:'flat', note:`Sin datos COT para ${map.m}.`};
+      // El COT es semanal: si el último informe tiene más de 30 días, está obsoleto y NO se usa.
+      const age = this.daysSince(L.report_date);
+      if(age == null || age > 30){
+        const txt = age == null ? 'fecha desconocida' : Math.round(age) + ' días';
+        ev.push({tag:'Posicionamiento', data:`COT de ${map.m} obsoleto (${L.report_date || 'sin fecha'})`, date:L.report_date || '—', src:'CFTC · COT', impact:`Último informe hace ${txt}; se descarta por desactualizado (el COT es semanal).`});
+        return {dir:'flat', note:`COT de ${map.m} desactualizado (${txt}); se descarta y queda neutral.`};
+      }
       ev.push({tag:'Posicionamiento', data:`Neto no comercial en ${map.m}: ${L.net>0?'+':''}${Number(L.net).toLocaleString('es')}`, date:L.report_date||'—', src:'CFTC · COT', impact:'Neto positivo = especuladores largos en esa divisa. Los extremos pueden ser contrarian.'});
       const ccyDir = sgn(L.net);
       const d = map.base ? ccyDir : (ccyDir===0?0:-ccyDir);
-      return {dir: d===1?'up':d===-1?'down':'flat', note:`Especuladores ${L.net>=0?'largos':'cortos'} en ${map.m}; regla simple por el signo del neto.`};
+      return {dir: d===1?'up':d===-1?'down':'flat', note:`Especuladores ${L.net>=0?'largos':'cortos'} en ${map.m} (informe del ${L.report_date}); regla simple por el signo del neto.`};
     }catch(e){ return {dir:'flat', note:'COT no disponible ahora.'}; }
   },
 
