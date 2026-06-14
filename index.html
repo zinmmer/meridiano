@@ -401,6 +401,11 @@ const Sources = {
     if(!LIVE) return null;
     return fromProxy(`/cot?market=${encodeURIComponent(market)}`);
   },
+  // BIS — tipo de política de un banco central -> GET /bis?cc=JP
+  async bisRate(cc){
+    if(!LIVE) return null;
+    return fromProxy(`/bis?cc=${encodeURIComponent(cc)}`);
+  },
   // Calendario macro (de momento, demo).
   async macroCalendar(){ return DEMO.calendar; }
 };
@@ -438,7 +443,8 @@ const Analyze = {
   inflTarget: 2.0,
   pairCcy: { eurusd:['EUR','USD'], gbpusd:['GBP','USD'], audusd:['AUD','USD'],
              nzdusd:['NZD','USD'], usdjpy:['USD','JPY'], usdchf:['USD','CHF'],
-             usdcad:['USD','CAD'], eurgbp:['EUR','GBP'], eurjpy:['EUR','JPY'] },
+             usdcad:['USD','CAD'], eurgbp:['EUR','GBP'], eurjpy:['EUR','JPY'],
+             usdcny:['USD','CNY'] },
   cot: { eurusd:{m:'EURO FX',base:true}, gbpusd:{m:'BRITISH POUND',base:true},
          audusd:{m:'AUSTRALIAN DOLLAR',base:true}, nzdusd:{m:'NEW ZEALAND DOLLAR',base:true},
          usdjpy:{m:'JAPANESE YEN',base:false}, usdchf:{m:'SWISS FRANC',base:false},
@@ -448,6 +454,7 @@ const Analyze = {
                 ndx:{n:'NVIDIA',cik:'1045810',c:'RevenueFromContractWithCustomerExcludingAssessedTax'},
                 dji:{n:'Microsoft',cik:'789019',c:'RevenueFromContractWithCustomerExcludingAssessedTax'} },
   euIndex: new Set(['dax','cac','ibex','estx50']),
+  cbName: { JPY:'BoJ', AUD:'RBA', NZD:'RBNZ', CNY:'PBoC' },
 
   // YoY desde una serie mensual de índice (FRED, orden descendente)
   yoyMonthly(o){ const a=o&&o.observations; if(!a||a.length<13) return null;
@@ -455,62 +462,95 @@ const Analyze = {
   // dirección de una serie FRED (desc): último vs k atrás
   dirDesc(o,k=3){ const a=o&&o.observations; if(!a||a.length<=k) return null;
     return sgn(num(a[0].value)-num(a[k].value)); },
-  // dirección de una serie ECB (asc): último vs inicio de la ventana
+  // dirección de una serie ascendente (ECB/BIS): último vs inicio de la ventana
   dirAsc(o){ const a=o&&o.observations; if(!a||a.length<2) return null;
     return sgn(num(a[a.length-1].value)-num(a[0].value)); },
+  // dirección de un tipo de política (BIS asc): último vs k meses atrás, banda muerta 0,05pp
+  dirBack(o,k){ const a=o&&o.observations; if(!a||a.length<2) return null;
+    const last=num(a[a.length-1].value), ref=num(a[Math.max(0,a.length-1-k)].value);
+    return (last!=null&&ref!=null) ? sgn(last-ref, 0.05) : null; },
 
-  // puntuación de política monetaria (solo USD y EUR tienen datos conectados)
-  ccyStance(ccy,b){
-    if(ccy==='USD' && (b.usInfl!=null || b.usRateDir!=null))
-      return clamp((b.usInfl!=null?(b.usInfl-this.inflTarget):0)*0.6 + (b.usRateDir||0)*0.6, -2, 2);
-    if(ccy==='EUR' && (b.ezInfl!=null || b.ezRateDir!=null))
-      return clamp((b.ezInfl!=null?(b.ezInfl-this.inflTarget):0)*0.6 + (b.ezRateDir||0)*0.6, -2, 2);
-    return null;
+  // ----- puntuaciones de política monetaria -----
+  // Para DIVISAS: nivel del tipo (carry) + dirección + (inflación vs objetivo, solo US/EUR).
+  stanceFrom(rate, dir, infl){
+    if(rate==null && dir==null && infl==null) return null;
+    let s = 0;
+    if(rate!=null) s += rate*0.25;
+    if(dir!=null)  s += dir*0.6;
+    if(infl!=null) s += (infl-this.inflTarget)*0.4;
+    return s;
+  },
+  fxStance(ccy,b){
+    if(ccy==='USD') return this.stanceFrom(b.usRate, b.usRateDir, b.usInfl);
+    if(ccy==='EUR') return this.stanceFrom(b.ezRate, b.ezRateDir, b.ezInfl);
+    const c = b.cb && b.cb[ccy];
+    return c ? this.stanceFrom(c.rate, c.dir, null) : null;
+  },
+  // Para RENTA VARIABLE: dirección del tipo + inflación (NO el nivel; un tipo positivo no es bajista per se).
+  hawk(infl, rateDir){
+    if(infl==null && rateDir==null) return null;
+    let s = 0;
+    if(infl!=null) s += (infl-this.inflTarget)*0.5;
+    if(rateDir!=null) s += rateDir*0.6;
+    return s;
   },
 
   async loadData(){
-    const [usCpi, usFF, ezHicp, ezMrr] = await Promise.all([
+    const bis = cc => Sources.bisRate(cc).catch(()=>null);
+    const [usCpi, usFF, ezHicp, ezMrr, jp, au, nz, cn] = await Promise.all([
       Sources.fredSeries('CPIAUCSL').catch(()=>null),
       Sources.fredSeries('FEDFUNDS').catch(()=>null),
       Sources.ecbSeries('ICP.M.U2.N.000000.4.ANR').catch(()=>null),
       Sources.ecbSeries('FM.B.U2.EUR.4F.KR.MRR_FR.LEV').catch(()=>null),
+      bis('JP'), bis('AU'), bis('NZ'), bis('CN'),
     ]);
+    const cb = {};
+    const add = (ccy,o) => { if(o && o.latest){ cb[ccy] = { rate:num(o.latest.value), dir:this.dirBack(o,6), date:o.latest.date }; } };
+    add('JPY',jp); add('AUD',au); add('NZD',nz); add('CNY',cn);
     return {
       usInfl:this.yoyMonthly(usCpi), usInflDate:usCpi&&usCpi.latest&&usCpi.latest.date,
-      usRateDir:this.dirDesc(usFF,3), usRate:usFF&&usFF.latest&&usFF.latest.value, usRateDate:usFF&&usFF.latest&&usFF.latest.date,
+      usRateDir:this.dirDesc(usFF,3), usRate:num(usFF&&usFF.latest&&usFF.latest.value), usRateDate:usFF&&usFF.latest&&usFF.latest.date,
       ezInfl:num(ezHicp&&ezHicp.latest&&ezHicp.latest.value), ezInflDate:ezHicp&&ezHicp.latest&&ezHicp.latest.date,
       ezRateDir:this.dirAsc(ezMrr), ezRate:num(ezMrr&&ezMrr.latest&&ezMrr.latest.value), ezRateDate:ezMrr&&ezMrr.latest&&ezMrr.latest.date,
+      cb,
     };
+  },
+
+  // evidencia: tipo de política de una divisa (US/EUR vía FRED/ECB; resto vía BIS)
+  pushRateEv(ccy,b,ev){
+    let d;
+    if(ccy==='USD') d = {rate:b.usRate, dir:b.usRateDir, date:b.usRateDate, src:'FRED · FEDFUNDS', who:'Fed'};
+    else if(ccy==='EUR') d = {rate:b.ezRate, dir:b.ezRateDir, date:b.ezRateDate, src:'ECB · MRR', who:'BCE'};
+    else { const c=b.cb&&b.cb[ccy]; if(c) d = {rate:c.rate, dir:c.dir, date:c.date, src:'BIS · CBPOL', who:this.cbName[ccy]||ccy}; }
+    if(d && d.rate!=null)
+      ev.push({tag:'Macro', data:`Tipo del ${d.who}: ${d.rate}%${d.dir>0?' (al alza)':d.dir<0?' (a la baja)':' (estable)'}`, date:d.date||'—', src:d.src, impact:'Tipo más alto o al alza → divisa más fuerte (carry y diferencial).'});
   },
 
   // ---------- dimensiones ----------
   macroFX(id,b,ev){
     const [base,quote] = this.pairCcy[id] || [];
-    const sb = this.ccyStance(base,b), sq = this.ccyStance(quote,b);
+    this.pushRateEv(base,b,ev); this.pushRateEv(quote,b,ev);
     if((base==='USD'||quote==='USD') && b.usInfl!=null)
-      ev.push({tag:'Macro', data:`IPC EE. UU. ${b.usInfl.toFixed(1)}% interanual`, date:b.usInflDate||'—', src:'FRED · CPIAUCSL', impact:'Inflación alta o al alza → Fed más restrictiva → dólar fuerte.'});
-    if((base==='USD'||quote==='USD') && b.usRateDir)
-      ev.push({tag:'Macro', data:`Tipo de la Fed ${b.usRateDir>0?'al alza':'a la baja'} (${b.usRate ?? '—'}%)`, date:b.usRateDate||'—', src:'FRED · FEDFUNDS', impact:'Subidas → dólar fuerte; bajadas → dólar débil.'});
+      ev.push({tag:'Macro', data:`IPC EE. UU. ${b.usInfl.toFixed(1)}% interanual`, date:b.usInflDate||'—', src:'FRED · CPIAUCSL', impact:'Inflación alta → Fed más restrictiva → dólar fuerte.'});
     if((base==='EUR'||quote==='EUR') && b.ezInfl!=null)
-      ev.push({tag:'Macro', data:`IPC eurozona ${b.ezInfl.toFixed(1)}% interanual`, date:b.ezInflDate||'—', src:'ECB · HICP', impact:'Inflación alta o al alza → BCE más restrictivo → euro fuerte.'});
-    if((base==='EUR'||quote==='EUR') && b.ezRateDir)
-      ev.push({tag:'Macro', data:`Tipo del BCE ${b.ezRateDir>0?'al alza':'a la baja'} (${b.ezRate ?? '—'}%)`, date:b.ezRateDate||'—', src:'ECB · MRR', impact:'Subidas → euro fuerte; bajadas → euro débil.'});
+      ev.push({tag:'Macro', data:`IPC eurozona ${b.ezInfl.toFixed(1)}% interanual`, date:b.ezInflDate||'—', src:'ECB · HICP', impact:'Inflación alta → BCE más restrictivo → euro fuerte.'});
+    const sb = this.fxStance(base,b), sq = this.fxStance(quote,b);
     if(sb==null && sq==null) return {dir:'flat', note:`Sin datos de política monetaria conectados para ${base} ni ${quote}.`};
     const net = (sb||0) - (sq||0);
-    const dir = net>0.15?'up' : net<-0.15?'down' : 'flat';
+    const dir = net>0.4?'up' : net<-0.4?'down' : 'flat';
     const miss = sb==null?base : sq==null?quote : null;
-    return {dir, note:`Diferencial de política ${base}–${quote}` + (miss?` (solo ${miss===base?quote:base} con datos; ${miss} sin conectar)`:'') + `: ${dir==='up'?base+' más fuerte':dir==='down'?quote+' más fuerte':'equilibrado'}.`};
+    return {dir, note:`Diferencial de tipos ${base}–${quote}` + (miss?` (falta ${miss}, sin conectar)`:'') + `: ${dir==='up'?base+' más fuerte':dir==='down'?quote+' más fuerte':'equilibrado'}.`};
   },
 
   macroIndex(id,b,ev){
     if(id==='ftse') return {dir:'flat', note:'BoE no conectado (la política del Reino Unido manda en el FTSE). Neutral por falta de dato.'};
     const us = ['spx','ndx','dji'].includes(id);
-    const st = us ? this.ccyStance('USD',b) : this.ccyStance('EUR',b);
-    const who = us?'Fed':'BCE'; const inf = us?b.usInfl:b.ezInfl; const infDate = us?b.usInflDate:b.ezInflDate;
+    const inf = us?b.usInfl:b.ezInfl, infDate = us?b.usInflDate:b.ezInflDate, dirRate = us?b.usRateDir:b.ezRateDir, who = us?'Fed':'BCE';
     if(inf!=null) ev.push({tag:'Macro', data:`IPC ${us?'EE. UU.':'eurozona'} ${inf.toFixed(1)}% interanual`, date:infDate||'—', src:us?'FRED · CPIAUCSL':'ECB · HICP', impact:`Inflación alta → ${who} restrictivo → tipos altos → presión sobre múltiplos.`});
+    const st = this.hawk(inf, dirRate);
     if(st==null) return {dir:'flat', note:`Sin datos del ${who} conectados.`};
-    const dir = sgn(-st, 0.15);
-    return {dir: dir===1?'up':dir===-1?'down':'flat', note:`Política del ${who} ${st>0.15?'restrictiva (viento en contra)':st<-0.15?'acomodaticia (viento a favor)':'neutral'} para la renta variable.`};
+    const dir = sgn(-st, 0.2);
+    return {dir: dir===1?'up':dir===-1?'down':'flat', note:`Política del ${who} ${st>0.2?'restrictiva (viento en contra)':st<-0.2?'acomodaticia (viento a favor)':'neutral'} para la renta variable.`};
   },
 
   async positioning(id,ev){
@@ -693,6 +733,19 @@ const DEMO = {
         {tag:'Posicionamiento', data:'Cortos en JPY siguen en niveles extremos', date:'10 jun 2026', src:'CFTC · COT', impact:'Mantiene al cruce arriba mientras dure el risk-on.'}
       ]
     },
+    { id:'usdcny', sym:'USD/CNY', nm:'Dólar · Yuan', klass:'fx',
+      thesis:'El yuan está muy gestionado por el PBoC, así que la señal macro es más débil que en un par libre. Se lee el diferencial de tipos, con cautela.',
+      coherence:4.6,
+      dims:{
+        macro:{dir:'up', note:'Diferencial de tipos a favor del dólar; el PBoC mantiene tipos bajos para apoyar la economía.'},
+        positioning:{dir:'flat', note:'Sin COT líquido de yuan; posicionamiento no conectado.'},
+        sentiment:{dir:'flat', note:'Sin fuente de noticias conectada.'},
+        fundamentals:{dir:'flat', note:'No aplica a una divisa.'}
+      },
+      ev:[
+        {tag:'Macro', data:'El PBoC mantiene tipos bajos frente a una Fed con tipos altos', date:'jun 2026', src:'BIS · CBPOL', impact:'Diferencial a favor del dólar → sesgo alcista del par, con la cautela de ser una divisa gestionada.'}
+      ]
+    },
 
     { id:'spx', sym:'SPX', nm:'S&P 500', klass:'idx',
       thesis:'Beneficios resilientes y una Fed que aún no recorta sostienen el índice, pero las valoraciones aprietan.',
@@ -846,6 +899,7 @@ const DEMO = {
     {mode:'proxy', org:'FRED · Reserva Federal', what:'Series macro (IPC, tipos, paro)', ep:'api.stlouisfed.org/fred/series'},
     {mode:'proxy', org:'BCE · SDW', what:'Estadísticas y tipos de la eurozona', ep:'data-api.ecb.europa.eu/service/data'},
     {mode:'proxy', org:'SEC EDGAR', what:'Resultados y filings (8-K, 10-K)', ep:'data.sec.gov/api/xbrl/companyfacts'},
+    {mode:'proxy', org:'BIS · CBPOL', what:'Tipos de política (JP, AU, NZ, CN…)', ep:'stats.bis.org/api/v2'},
     {mode:'proxy', org:'BoE · BoJ · RBA · SNB · BoC · RBNZ', what:'Decisiones y comunicados', ep:'schedules + statements oficiales'},
     {mode:'proxy', org:'BLS · BEA · Eurostat · ONS', what:'Calendario de datos macro', ep:'release calendars'},
     {mode:'soon',  org:'On-chain · ETF flows', what:'Cripto (en camino)', ep:'en desarrollo'}
