@@ -355,39 +355,50 @@
    de ejemplo. Cuando montes el proxy, pon USE_DEMO = false y
    completa los fetch en el bloque Sources.
    ============================================================ */
-const USE_DEMO = true;
+const USE_DEMO = true;          // pon false cuando el proxy esté desplegado
+const PROXY    = '';            // URL del worker, p.ej. 'https://meridiano-proxy.tu-sub.workers.dev' (sin barra final)
+const LIVE     = !USE_DEMO && !!PROXY;
+
+// llamada al proxy con manejo de error
+async function fromProxy(path){
+  const r = await fetch(PROXY + path, { headers:{ 'Accept':'application/json' } });
+  if(!r.ok) throw new Error('proxy ' + r.status);
+  return r.json();
+}
 
 /* ---- CAPA DE FUENTES OFICIALES (adaptadores) ---------------
-   Estas son las "tuberías". Hoy son stubs documentados.
+   Cada método llama al proxy (worker.js) cuando LIVE = true; si
+   no, devuelve datos de ejemplo. El proxy es quien habla con las
+   fuentes oficiales, cachea y añade CORS.
    ------------------------------------------------------------ */
 const Sources = {
-  // Tipos de cambio de referencia del BCE (Frankfurter envuelve datos del BCE).
-  // CORS: permitido -> puede llamarse directo desde el navegador.
-  // GET https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD
-  async fxReference(base, symbols){ if(USE_DEMO) return null; /* fetch(...) */ },
-
-  // FRED — series macro de la Reserva Federal (CPI, tipos, paro...).
-  // Requiere API key + proxy (sin CORS, no exponer clave).
-  // GET https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCSL&api_key=...
-  async fredSeries(seriesId){ if(USE_DEMO) return null; /* fetch('/api/fred?series='+seriesId) */ },
-
-  // BCE — Statistical Data Warehouse. Recomendado vía proxy.
-  // GET https://data-api.ecb.europa.eu/service/data/{flow}/{key}?format=jsondata
-  async ecbSeries(flow,key){ if(USE_DEMO) return null; },
-
-  // SEC EDGAR — hechos financieros y filings (8-K, 10-K, 10-Q).
-  // Requiere cabecera User-Agint -> obligatorio vía proxy.
-  // GET https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json
-  async edgarFacts(cik){ if(USE_DEMO) return null; },
-
-  // CFTC — Commitments of Traders (posicionamiento). Socrata, CORS ok -> directo.
-  // GET https://publicreporting.cftc.gov/resource/6dca-aqww.json?...
-  async cotReport(market){ if(USE_DEMO) return null; },
-
-  // Calendario macro: se arma desde los calendarios oficiales de releases
-  // (BLS, BEA, Eurostat) y los schedules de reuniones de los bancos centrales.
-  // Mejor vía proxy + tu propio cron. Aquí: demo.
-  async macroCalendar(){ if(USE_DEMO) return DEMO.calendar; }
+  // Tipos de referencia del BCE (vía Frankfurter) -> GET /fx
+  async fxReference(base='EUR', symbols='USD,GBP,JPY'){
+    if(!LIVE) return null;
+    return fromProxy(`/fx?base=${base}&symbols=${symbols}`);
+  },
+  // Series macro de la Reserva Federal (FRED) -> GET /fred?series=CPIAUCSL
+  async fredSeries(series){
+    if(!LIVE) return null;
+    return fromProxy(`/fred?series=${encodeURIComponent(series)}`);
+  },
+  // Estadísticas del BCE (SDW) -> GET /ecb?key=ICP.M.U2.N.000000.4.ANR
+  async ecbSeries(key){
+    if(!LIVE) return null;
+    return fromProxy(`/ecb?key=${encodeURIComponent(key)}`);
+  },
+  // SEC EDGAR (hechos financieros) -> GET /edgar?cik=320193&concept=Revenues
+  async edgarConcept(cik, concept){
+    if(!LIVE) return null;
+    return fromProxy(`/edgar?cik=${encodeURIComponent(cik)}&concept=${encodeURIComponent(concept)}`);
+  },
+  // CFTC Commitments of Traders -> GET /cot?market=EURO FX
+  async cotReport(market){
+    if(!LIVE) return null;
+    return fromProxy(`/cot?market=${encodeURIComponent(market)}`);
+  },
+  // Calendario macro (de momento, demo).
+  async macroCalendar(){ return DEMO.calendar; }
 };
 
 /* ---- MOTOR DE SESGO (transparente, sin caja negra) ---------
@@ -406,6 +417,148 @@ function computeBias(dims){
                             : Math.min(5, Math.max(1, Math.round(1 + Math.abs(score)*3 + align*1.4)));
   return { dir, conv, score:+score.toFixed(2) };
 }
+
+/* ============================================================
+   MOTOR DE ANÁLISIS  (reglas transparentes sobre datos oficiales)
+   ------------------------------------------------------------
+   Lee los datos del proxy y deduce cada dimensión con reglas
+   explícitas y auditables. Donde no hay fuente conectada, marca
+   neutral y lo dice. REGLAS ILUSTRATIVAS SIN VALIDAR.
+   No es asesoría financiera.
+   ============================================================ */
+const num   = v => (v==null || v==='' || isNaN(+v)) ? null : +v;
+const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
+const sgn   = (x,dead=0) => x> dead ? 1 : x< -dead ? -1 : 0;
+
+const Analyze = {
+  inflTarget: 2.0,
+  pairCcy: { eurusd:['EUR','USD'], gbpusd:['GBP','USD'], audusd:['AUD','USD'],
+             nzdusd:['NZD','USD'], usdjpy:['USD','JPY'], usdchf:['USD','CHF'],
+             usdcad:['USD','CAD'], eurgbp:['EUR','GBP'], eurjpy:['EUR','JPY'] },
+  cot: { eurusd:{m:'EURO FX',base:true}, gbpusd:{m:'BRITISH POUND',base:true},
+         audusd:{m:'AUSTRALIAN DOLLAR',base:true}, nzdusd:{m:'NEW ZEALAND DOLLAR',base:true},
+         usdjpy:{m:'JAPANESE YEN',base:false}, usdchf:{m:'SWISS FRANC',base:false},
+         usdcad:{m:'CANADIAN DOLLAR',base:false}, eurgbp:{m:'EURO FX',base:true},
+         eurjpy:{m:'EURO FX',base:true} },
+  bellwether: { spx:{n:'Apple',cik:'320193',c:'RevenueFromContractWithCustomerExcludingAssessedTax'},
+                ndx:{n:'NVIDIA',cik:'1045810',c:'RevenueFromContractWithCustomerExcludingAssessedTax'},
+                dji:{n:'Microsoft',cik:'789019',c:'RevenueFromContractWithCustomerExcludingAssessedTax'} },
+  euIndex: new Set(['dax','cac','ibex','estx50']),
+
+  // YoY desde una serie mensual de índice (FRED, orden descendente)
+  yoyMonthly(o){ const a=o&&o.observations; if(!a||a.length<13) return null;
+    const v0=num(a[0].value), v12=num(a[12].value); return (v0!=null&&v12)?(v0/v12-1)*100:null; },
+  // dirección de una serie FRED (desc): último vs k atrás
+  dirDesc(o,k=3){ const a=o&&o.observations; if(!a||a.length<=k) return null;
+    return sgn(num(a[0].value)-num(a[k].value)); },
+  // dirección de una serie ECB (asc): último vs inicio de la ventana
+  dirAsc(o){ const a=o&&o.observations; if(!a||a.length<2) return null;
+    return sgn(num(a[a.length-1].value)-num(a[0].value)); },
+
+  // puntuación de política monetaria (solo USD y EUR tienen datos conectados)
+  ccyStance(ccy,b){
+    if(ccy==='USD' && (b.usInfl!=null || b.usRateDir!=null))
+      return clamp((b.usInfl!=null?(b.usInfl-this.inflTarget):0)*0.6 + (b.usRateDir||0)*0.6, -2, 2);
+    if(ccy==='EUR' && (b.ezInfl!=null || b.ezRateDir!=null))
+      return clamp((b.ezInfl!=null?(b.ezInfl-this.inflTarget):0)*0.6 + (b.ezRateDir||0)*0.6, -2, 2);
+    return null;
+  },
+
+  async loadData(){
+    const [usCpi, usFF, ezHicp, ezMrr] = await Promise.all([
+      Sources.fredSeries('CPIAUCSL').catch(()=>null),
+      Sources.fredSeries('FEDFUNDS').catch(()=>null),
+      Sources.ecbSeries('ICP.M.U2.N.000000.4.ANR').catch(()=>null),
+      Sources.ecbSeries('FM.B.U2.EUR.4F.KR.MRR_FR.LEV').catch(()=>null),
+    ]);
+    return {
+      usInfl:this.yoyMonthly(usCpi), usInflDate:usCpi&&usCpi.latest&&usCpi.latest.date,
+      usRateDir:this.dirDesc(usFF,3), usRate:usFF&&usFF.latest&&usFF.latest.value, usRateDate:usFF&&usFF.latest&&usFF.latest.date,
+      ezInfl:num(ezHicp&&ezHicp.latest&&ezHicp.latest.value), ezInflDate:ezHicp&&ezHicp.latest&&ezHicp.latest.date,
+      ezRateDir:this.dirAsc(ezMrr), ezRate:num(ezMrr&&ezMrr.latest&&ezMrr.latest.value), ezRateDate:ezMrr&&ezMrr.latest&&ezMrr.latest.date,
+    };
+  },
+
+  // ---------- dimensiones ----------
+  macroFX(id,b,ev){
+    const [base,quote] = this.pairCcy[id] || [];
+    const sb = this.ccyStance(base,b), sq = this.ccyStance(quote,b);
+    if((base==='USD'||quote==='USD') && b.usInfl!=null)
+      ev.push({tag:'Macro', data:`IPC EE. UU. ${b.usInfl.toFixed(1)}% interanual`, date:b.usInflDate||'—', src:'FRED · CPIAUCSL', impact:'Inflación alta o al alza → Fed más restrictiva → dólar fuerte.'});
+    if((base==='USD'||quote==='USD') && b.usRateDir)
+      ev.push({tag:'Macro', data:`Tipo de la Fed ${b.usRateDir>0?'al alza':'a la baja'} (${b.usRate ?? '—'}%)`, date:b.usRateDate||'—', src:'FRED · FEDFUNDS', impact:'Subidas → dólar fuerte; bajadas → dólar débil.'});
+    if((base==='EUR'||quote==='EUR') && b.ezInfl!=null)
+      ev.push({tag:'Macro', data:`IPC eurozona ${b.ezInfl.toFixed(1)}% interanual`, date:b.ezInflDate||'—', src:'ECB · HICP', impact:'Inflación alta o al alza → BCE más restrictivo → euro fuerte.'});
+    if((base==='EUR'||quote==='EUR') && b.ezRateDir)
+      ev.push({tag:'Macro', data:`Tipo del BCE ${b.ezRateDir>0?'al alza':'a la baja'} (${b.ezRate ?? '—'}%)`, date:b.ezRateDate||'—', src:'ECB · MRR', impact:'Subidas → euro fuerte; bajadas → euro débil.'});
+    if(sb==null && sq==null) return {dir:'flat', note:`Sin datos de política monetaria conectados para ${base} ni ${quote}.`};
+    const net = (sb||0) - (sq||0);
+    const dir = net>0.15?'up' : net<-0.15?'down' : 'flat';
+    const miss = sb==null?base : sq==null?quote : null;
+    return {dir, note:`Diferencial de política ${base}–${quote}` + (miss?` (solo ${miss===base?quote:base} con datos; ${miss} sin conectar)`:'') + `: ${dir==='up'?base+' más fuerte':dir==='down'?quote+' más fuerte':'equilibrado'}.`};
+  },
+
+  macroIndex(id,b,ev){
+    if(id==='ftse') return {dir:'flat', note:'BoE no conectado (la política del Reino Unido manda en el FTSE). Neutral por falta de dato.'};
+    const us = ['spx','ndx','dji'].includes(id);
+    const st = us ? this.ccyStance('USD',b) : this.ccyStance('EUR',b);
+    const who = us?'Fed':'BCE'; const inf = us?b.usInfl:b.ezInfl; const infDate = us?b.usInflDate:b.ezInflDate;
+    if(inf!=null) ev.push({tag:'Macro', data:`IPC ${us?'EE. UU.':'eurozona'} ${inf.toFixed(1)}% interanual`, date:infDate||'—', src:us?'FRED · CPIAUCSL':'ECB · HICP', impact:`Inflación alta → ${who} restrictivo → tipos altos → presión sobre múltiplos.`});
+    if(st==null) return {dir:'flat', note:`Sin datos del ${who} conectados.`};
+    const dir = sgn(-st, 0.15);
+    return {dir: dir===1?'up':dir===-1?'down':'flat', note:`Política del ${who} ${st>0.15?'restrictiva (viento en contra)':st<-0.15?'acomodaticia (viento a favor)':'neutral'} para la renta variable.`};
+  },
+
+  async positioning(id,ev){
+    const map = this.cot[id];
+    if(!map) return {dir:'flat', note:'COT no conectado para este activo.'};
+    try{
+      const c = await Sources.cotReport(map.m); const L = c && c.latest;
+      if(!L || L.net==null) return {dir:'flat', note:`Sin datos COT para ${map.m}.`};
+      ev.push({tag:'Posicionamiento', data:`Neto no comercial en ${map.m}: ${L.net>0?'+':''}${Number(L.net).toLocaleString('es')}`, date:L.report_date||'—', src:'CFTC · COT', impact:'Neto positivo = especuladores largos en esa divisa. Los extremos pueden ser contrarian.'});
+      const ccyDir = sgn(L.net);
+      const d = map.base ? ccyDir : (ccyDir===0?0:-ccyDir);
+      return {dir: d===1?'up':d===-1?'down':'flat', note:`Especuladores ${L.net>=0?'largos':'cortos'} en ${map.m}; regla simple por el signo del neto.`};
+    }catch(e){ return {dir:'flat', note:'COT no disponible ahora.'}; }
+  },
+
+  async fundamentals(id,ev){
+    if(this.euIndex.has(id)) return {dir:'flat', note:'Fundamentales europeos no conectados (la SEC solo cubre EE. UU.).'};
+    const bw = this.bellwether[id];
+    if(!bw) return {dir:'flat', note:'Fundamentales no conectados para este activo.'};
+    try{
+      const d = await Sources.edgarConcept(bw.cik, bw.c);
+      const ser = (d && d.series) ? d.series.filter(x => x.form==='10-K' && x.val!=null) : [];
+      if(ser.length<2) return {dir:'flat', note:`Sin histórico anual suficiente de ${bw.n} en SEC.`};
+      const a = ser[ser.length-1], p = ser[ser.length-2]; const g = (a.val/p.val - 1)*100;
+      ev.push({tag:'Fundamental', data:`Ingresos de ${bw.n} ${g>0?'+':''}${g.toFixed(1)}% interanual`, date:a.end||'—', src:`SEC · ${bw.c}`, impact:'Crecimiento de ingresos de un valor de referencia (proxy del índice, no el índice entero).'});
+      const d2 = sgn(g, 1);
+      return {dir: d2===1?'up':d2===-1?'down':'flat', note:`Ingresos de ${bw.n} (valor representativo) ${g>1?'al alza':g<-1?'a la baja':'planos'} interanual.`};
+    }catch(e){ return {dir:'flat', note:'SEC no disponible ahora.'}; }
+  },
+
+  sentiment(){ return {dir:'flat', note:'Sin fuente de noticias conectada (Reuters/Bloomberg requieren licencia). Neutral.'}; },
+
+  async analyzeAsset(a,b){
+    const ev = [], dims = {};
+    dims.macro = a.klass==='fx' ? this.macroFX(a.id,b,ev) : this.macroIndex(a.id,b,ev);
+    dims.positioning = await this.positioning(a.id,ev);
+    dims.fundamentals = await this.fundamentals(a.id,ev);
+    dims.sentiment = this.sentiment();
+    let voted=0, agree=0;
+    for(const k in W){ const v=val(dims[k].dir); if(v){ voted++; agree+=v; } }
+    const coherence = voted ? +(4 + (Math.abs(agree)/voted)*5).toFixed(1) : 5.0;
+    return { dims, ev, coherence, thesis:this.thesis(dims) };
+  },
+
+  thesis(dims){
+    const d = computeBias(dims).dir;
+    const lead = d==='up'?'Sesgo alcista' : d==='down'?'Sesgo bajista' : 'Sin sesgo claro';
+    const drivers = [['macro','la política monetaria'],['positioning','el posicionamiento'],['fundamentals','los fundamentales']]
+      .filter(([k]) => dims[k] && dims[k].dir!=='flat').map(([,t]) => t);
+    return `${lead} a partir de datos oficiales: ` + (drivers.length ? `pesa ${drivers.join(' y ')}.` : 'las dimensiones conectadas se compensan.');
+  }
+};
 
 /* ============================================================
    DATOS DE EJEMPLO  (ilustrativos — NO son señales reales)
@@ -839,7 +992,13 @@ function renderFeed(){
 }
 
 function renderSources(){
-  $('#srcWrap').innerHTML = `<div class="src-card">${DEMO.sources.map(s=>`
+  const probe = LIVE
+    ? `<div class="src-card" id="liveProbe"><div class="src-item">
+         <div class="src-status proxy"></div>
+         <div class="src-body"><div class="src-name"><span class="org">Comprobando proxy…</span></div>
+         <div class="src-ep">${PROXY}</div></div></div></div>`
+    : `<div class="callout" style="margin:0 0 14px;"><b>Modo demo.</b> Para datos oficiales en vivo: despliega <span class="mono">worker.js</span>, pon <span class="mono">USE_DEMO = false</span> y la URL del proxy en <span class="mono">PROXY</span> (arriba del script).</div>`;
+  $('#srcWrap').innerHTML = probe + `<div class="src-card">${DEMO.sources.map(s=>`
     <div class="src-item">
       <div class="src-status ${s.mode}"></div>
       <div class="src-body">
@@ -848,6 +1007,39 @@ function renderSources(){
         <div class="src-mode ${s.mode}">${s.mode==='live'?'conexión directa':s.mode==='proxy'?'vía proxy':'en camino'}</div>
       </div>
     </div>`).join('')}</div>`;
+  if(LIVE) probeLive();
+}
+
+// Prueba de conexión: trae datos OFICIALES reales por el proxy.
+// (Esto son datos verificables; los sesgos siguen siendo de ejemplo.)
+async function probeLive(){
+  const box = $('#liveProbe'); if(!box) return;
+  try{
+    const [fx, cpi] = await Promise.all([
+      Sources.fxReference('EUR','USD,GBP,JPY'),
+      Sources.fredSeries('CPIAUCSL').catch(()=>null)
+    ]);
+    let rows = '';
+    if(fx && fx.rates){
+      const r = fx.rates;
+      rows += `<div class="src-item"><div class="src-status live"></div><div class="src-body">
+        <div class="src-name"><span class="org">BCE · tipos de referencia</span> &nbsp;<span class="what">${fx.date||''}</span></div>
+        <div class="src-ep">EUR/USD ${r.USD ?? '—'} · EUR/GBP ${r.GBP ?? '—'} · EUR/JPY ${r.JPY ?? '—'}</div>
+        <div class="src-mode live">en vivo · oficial</div></div></div>`;
+    }
+    if(cpi && cpi.latest){
+      rows += `<div class="src-item"><div class="src-status live"></div><div class="src-body">
+        <div class="src-name"><span class="org">FRED · IPC EE. UU.</span> &nbsp;<span class="what">${cpi.latest.date||''}</span></div>
+        <div class="src-ep">índice CPIAUCSL · ${cpi.latest.value ?? '—'}</div>
+        <div class="src-mode live">en vivo · oficial</div></div></div>`;
+    }
+    box.innerHTML = rows || `<div class="src-item"><div class="src-status soon"></div><div class="src-body"><div class="src-name"><span class="org">Proxy conectado, sin datos de prueba.</span></div></div></div>`;
+  }catch(e){
+    box.innerHTML = `<div class="src-item"><div class="src-status" style="background:var(--down)"></div><div class="src-body">
+      <div class="src-name"><span class="org">No se pudo conectar al proxy</span></div>
+      <div class="src-ep">${PROXY} · ${String(e.message||e)}</div>
+      <div class="src-mode" style="color:var(--down)">revisa la URL y que tu origen esté en ALLOWED_ORIGINS</div></div></div>`;
+  }
 }
 
 /* ---- navegación entre vistas ---- */
@@ -866,7 +1058,8 @@ $('#chips').querySelectorAll('.chip').forEach(c=>{
   c.onclick=()=>{
     $('#chips').querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed','false'));
     c.setAttribute('aria-pressed','true');
-    renderCards(c.dataset.f);
+    curFilter = c.dataset.f;
+    renderCards(curFilter);
   };
 });
 
@@ -881,10 +1074,31 @@ $('#chips').querySelectorAll('.chip').forEach(c=>{
 })();
 
 /* ---- init ---- */
-renderCards('all');
-renderCalendar();
-renderFeed();
-renderSources();
+var curFilter = 'all';
+function setStrip(t){ const s = document.querySelector('.strip span:last-child'); if(s) s.textContent = t; }
+
+async function boot(){
+  renderCards(curFilter);
+  renderCalendar();
+  renderFeed();
+  renderSources();
+  if(!LIVE) return;   // modo demo: sesgos de ejemplo, ya renderizados
+  setStrip('Sesgos por reglas transparentes sobre datos oficiales · reglas ilustrativas sin validar · no es asesoría financiera.');
+  try{
+    const bundle = await Analyze.loadData();
+    await Promise.all(DEMO.assets.filter(a => !a.soon).map(async a => {
+      try{
+        const r = await Analyze.analyzeAsset(a, bundle);
+        a.dims = r.dims; a.ev = r.ev; a.coherence = r.coherence; a.thesis = r.thesis;
+        a.bias = computeBias(a.dims); a.live = true;
+      }catch(e){ a.live = false; }   // ese activo se queda en ejemplo
+    }));
+    renderCards(curFilter);
+  }catch(e){
+    setStrip('No se pudieron cargar los datos oficiales; se muestra el ejemplo. (' + String(e.message||e) + ')');
+  }
+}
+boot();
 </script>
 </body>
 </html>
