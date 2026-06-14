@@ -66,6 +66,10 @@
   .brand-sub{font-size:11px;color:var(--bone-faint);letter-spacing:.02em;}
   .pill{font-family:var(--ff-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
     color:var(--gold);border:1px solid var(--gold-dim);border-radius:100px;padding:4px 9px;white-space:nowrap;}
+  .pill.live{color:var(--up);border-color:rgba(63,179,127,.5);}
+  .pill.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--up);margin-right:6px;vertical-align:middle;box-shadow:0 0 0 3px rgba(63,179,127,.16);}
+  .pill.err{color:var(--down);border-color:rgba(229,96,77,.5);}
 
   /* ============ DISCLAIMER STRIP ============ */
   .strip{font-size:11.5px;color:var(--bone-dim);background:var(--ink-sunken);
@@ -1007,7 +1011,7 @@ function renderSources(){
         <div class="src-mode ${s.mode}">${s.mode==='live'?'conexión directa':s.mode==='proxy'?'vía proxy':'en camino'}</div>
       </div>
     </div>`).join('')}</div>`;
-  if(LIVE) probeLive();
+  if(LIVE){ probeLive(); } else { setLive('demo'); }
 }
 
 // Prueba de conexión: trae datos OFICIALES reales por el proxy.
@@ -1034,7 +1038,9 @@ async function probeLive(){
         <div class="src-mode live">en vivo · oficial</div></div></div>`;
     }
     box.innerHTML = rows || `<div class="src-item"><div class="src-status soon"></div><div class="src-body"><div class="src-name"><span class="org">Proxy conectado, sin datos de prueba.</span></div></div></div>`;
+    setLive('live');
   }catch(e){
+    setLive('error');
     box.innerHTML = `<div class="src-item"><div class="src-status" style="background:var(--down)"></div><div class="src-body">
       <div class="src-name"><span class="org">No se pudo conectar al proxy</span></div>
       <div class="src-ep">${PROXY} · ${String(e.message||e)}</div>
@@ -1076,6 +1082,12 @@ $('#chips').querySelectorAll('.chip').forEach(c=>{
 /* ---- init ---- */
 var curFilter = 'all';
 function setStrip(t){ const s = document.querySelector('.strip span:last-child'); if(s) s.textContent = t; }
+function setLive(state){
+  const p = document.getElementById('demoPill'); if(!p) return;
+  if(state==='live'){ p.textContent = 'En vivo'; p.className = 'pill live'; }
+  else if(state==='error'){ p.textContent = 'Sin conexión'; p.className = 'pill err'; }
+  else { p.textContent = 'Demo'; p.className = 'pill'; }
+}
 
 async function boot(){
   renderCards(curFilter);
